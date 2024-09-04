@@ -1,73 +1,58 @@
-import numpy as np
+import unittest
 from datetime import datetime
+import numpy as np
+from utils import (
+    calculate_ZCB_values, 
+    get_ZCB_vector
+)
 
-def calculate_ZCB_values(rates, start_dates, end_dates):
+class TestCalculateZCBValue(unittest.TestCase):
     """
-    Calculate the discount factors over periods given rates.
-    Parameters:
-    rates (np.ndarray): The discount rates (as decimals).
-    start_dates (np.ndarray): The start dates.
-    end_dates (np.ndarray): The end dates.
-    Returns:
-    np.ndarray: The discount factors.
+    Unit tests for the calculate_ZCB_value function.
     """
-    # Ensure that rates are a ndarray so that np.exp will not throw a TypeError
-    rates = np.array(rates)
 
-    # Calculate the time difference in years as a float and return the exponential using the given rates
-    time_diffs = np.array([(end_date - start_date).days / 365.0 for end_date, start_date in zip(end_dates, start_dates)])
+    def test_calculate_ZCB_value(self):
+        """
+        Test the calculation of zero-coupon bond (ZCB) value.
+        Verifies that the ZCB value is correctly computed for a given
+        discount rate, current date, and maturity date.
+        """
+        rates = [0.05, 0.04]
+        start_dates = [datetime(2025, 1, 1), datetime(2025, 1, 1)]
+        end_dates = [datetime(2026, 1, 1), datetime(2027, 1, 1)]
+        expected_values = [
+            np.exp(-rates[0] * 1.0),  # 1 year
+            np.exp(-rates[1] * 2.0)   # 2 years
+        ]
+        result = calculate_ZCB_values(rates, start_dates, end_dates)
+        np.testing.assert_array_almost_equal(result, expected_values, decimal=6)
 
-    return np.exp(-rates * time_diffs)
-
-def get_ZCB_vector(settle_date, payment_dates, rate_vals, rate_dates):
+class TestGetZCBVector(unittest.TestCase):
     """
-    Calculate the discount factors for each payment date given a set of rates and rate dates.
-    Parameters:
-    settle_date (datetime): The settlement date.
-    payment_dates (list of datetime): A list of payment dates.
-    rate_vals (list of float): A list of discount rates (as decimals).
-    rate_dates (list of datetime): A list of the corresponding dates to rate_vals.
-    Returns:
-    numpy.ndarray: An array of discount factors for the given payment dates.
+    Unit tests for the get_ZCB_vector function.
     """
-    # Convert rate_vals and rate_dates to numpy arrays for efficient operations
-    rate_vals = np.array(rate_vals)
-    rate_dates = np.array(rate_dates)
 
-    # Initialize the result array
-    zcb_vector = np.zeros(len(payment_dates))
+    def setUp(self):
+        """
+        Set up test data for get_ZCB_vector.
+        """
+        self.settle_date = datetime(2025, 1, 1)
+        self.payment_dates = [datetime(2026, 1, 1), datetime(2027, 1, 1)]
+        self.rate_vals = [0.05, 0.04]
+        self.rate_dates = [datetime(2026, 1, 1), datetime(2027, 1, 1)]
 
-    for i, payment_date in enumerate(payment_dates):
-        discount_factor = 1.0
+    def test_get_ZCB_vector(self):
+        """
+        Test the generation of a vector of zero-coupon bond (ZCB) values.
+        Verifies that a vector of ZCB values is correctly generated for
+        given payment dates and discount rates.
+        """
+        expected_values = [
+            np.exp(-self.rate_vals[0] * 1.0),  # 1 year
+            np.exp(-self.rate_vals[0] * 1.0 - self.rate_vals[1] * 1.0)   # 2 years
+        ]
+        result = get_ZCB_vector(self.settle_date, self.payment_dates, self.rate_vals, self.rate_dates)
+        np.testing.assert_array_almost_equal(result, expected_values, decimal=6)
 
-        # Iterate over the rate dates
-        for j, rate_date in enumerate(rate_dates):
-            # Calculate the time period to use
-            if j == 0:
-                # Special case when j equals 0, the previous rate date is set to the settle date
-                # and the end date is the current rate date
-                prev_date = settle_date
-                end_date = rate_date
-            elif payment_date < rate_date:
-                # For the end date, use the payment date if it's before the current rate date
-                end_date = payment_date
-            else:
-                # Otherwise, use the rate date
-                end_date = rate_date
-
-            # Calculate the time difference in years
-            time_period = (end_date - prev_date).days / 365.0
-
-            # Update the discount factor
-            discount_factor *= np.exp(-rate_vals[j] * time_period)
-
-            # If the end date is the payment date, break out, else update the previous date
-            if end_date == payment_date:
-                break
-            else: 
-                prev_date = rate_date
-
-        # Store the discount factor for the current payment date
-        zcb_vector[i] = discount_factor
-
-    return zcb_vector
+if __name__ == '__main__':
+    unittest.main()
