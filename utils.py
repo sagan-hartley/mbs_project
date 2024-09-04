@@ -1,12 +1,12 @@
 import numpy as np
 from datetime import datetime
 
-def get_ZCB_vector(settle_date, payment_dates, rate_vals, rate_dates):
+def get_ZCB_vector(market_close_date, payment_dates, rate_vals, rate_dates):
     """
     Calculate the discount factors for each payment date given a set of rates and rate dates.
 
     Parameters:
-    settle_date (datetime): The settlement date.
+    market_close_date (datetime): The market close date.
     payment_dates (list of datetime): A list of payment dates.
     rate_vals (list of float): A list of discount rates (as decimals).
     rate_dates (list of datetime): A list of the corresponding dates to rate_vals.
@@ -30,7 +30,7 @@ def get_ZCB_vector(settle_date, payment_dates, rate_vals, rate_dates):
             if j == 0:
                 # Special case when j equals 0, the previous rate date is set to the settle date
                 # and the end date is the current rate date
-                prev_date = settle_date
+                prev_date = market_close_date
                 end_date = rate_date
             elif payment_date < rate_date:
                 # For the end date, use the payment date if it's before the current rate date
