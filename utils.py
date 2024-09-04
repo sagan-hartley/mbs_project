@@ -1,26 +1,6 @@
 import numpy as np
 from datetime import datetime
 
-def calculate_ZCB_values(rates, start_dates, end_dates):
-    """
-    Calculate the discount factors over periods given rates.
-
-    Parameters:
-    rates (np.ndarray): The discount rates (as decimals).
-    start_dates (np.ndarray): The start dates.
-    end_dates (np.ndarray): The end dates.
-
-    Returns:
-    np.ndarray: The discount factors.
-    """
-    # Ensure that rates are a ndarray so that np.exp will not throw a TypeError
-    rates = np.array(rates)
-
-    # Calculate the time difference in years as a float and return the exponential using the given rates
-    time_diffs = np.array([(end_date - start_date).days / 365.0 for end_date, start_date in zip(end_dates, start_dates)])
-
-    return np.exp(-rates * time_diffs)
-
 def get_ZCB_vector(settle_date, payment_dates, rate_vals, rate_dates):
     """
     Calculate the discount factors for each payment date given a set of rates and rate dates.
