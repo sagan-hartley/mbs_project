@@ -22,10 +22,6 @@ jobs:
         with:
           python-version: '3.8'  # Specify the Python version you need
 
-      - name: Install dependencies
-        run: |
-          
-
       - name: Run tests
         run: |
           python -m unittest discover -s tests
