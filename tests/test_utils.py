@@ -22,8 +22,47 @@ class TestGetZCBVector(unittest.TestCase):
 
         expected_values = [
             np.exp(-rate_vals[0] * 0.5),  # 1/2 year
-            np.exp(-rate_vals[0] * 1.0) ,  # 1 years
+            np.exp(-rate_vals[0] * 1.0) ,  # 1 year
             np.exp(-rate_vals[0] * 1.0 - rate_vals[1] * 0.5) # 1 1/2 years
+        ]
+        result = get_ZCB_vector(payment_dates, rate_vals, rate_dates)
+        np.testing.assert_array_almost_equal(result, expected_values, decimal=3)
+
+    def test_last_payment_date(self):
+        """
+        Test the generation of a vector of zero-coupon bond (ZCB) values
+        when a payment date is beyond the last rate date.
+        Verifies that a vector of ZCB values is correctly generated for
+        given payment dates and discount rates.
+        """
+        payment_dates = [datetime(2026, 1, 1), datetime(2027, 1, 1), datetime(2028, 1, 1)]
+        rate_vals = [0.05, 0.04, 0.05]
+        rate_dates = [datetime(2025, 1, 1), datetime(2026, 1, 1), datetime(2027, 1, 1)]
+
+        expected_values = [
+            np.exp(-rate_vals[0] * 1.0),  # 1 year
+            np.exp(-rate_vals[0] * 1.0 - rate_vals[1] * 1.0) ,  # 2 years
+            np.exp(-rate_vals[0] * 1.0 - rate_vals[1] * 1.0 - rate_vals[2] * 1.0) # 3 years
+        ]
+        result = get_ZCB_vector(payment_dates, rate_vals, rate_dates)
+        np.testing.assert_array_almost_equal(result, expected_values, decimal=3)
+
+    def test_early_payment_dates(self):
+        """
+        Test the generation of a vector of zero-coupon bond (ZCB) values
+        when a payment date is before and on the market close date.
+        Verifies that a vector of ZCB values is correctly generated for
+        given payment dates and discount rates.
+        """
+        payment_dates = [datetime(2025, 1, 1), datetime(2026, 1, 1), datetime(2027, 1, 1), datetime(2028, 1, 1)]
+        rate_vals = [0.05, 0.04, 0.05, 0.04]
+        rate_dates = [datetime(2026, 1, 1), datetime(2027, 1, 1), datetime(2028, 1, 1), datetime(2029, 1, 1)]
+
+        expected_values = [
+            0.0,
+            1.0, 
+            np.exp(-rate_vals[2] * 1.0),  # 1 year
+            np.exp(-rate_vals[2] * 1.0 - rate_vals[3] * 1.0) ,  # 2 years
         ]
         result = get_ZCB_vector(payment_dates, rate_vals, rate_dates)
         np.testing.assert_array_almost_equal(result, expected_values, decimal=3)
