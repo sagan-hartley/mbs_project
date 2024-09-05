@@ -32,7 +32,8 @@ def get_ZCB_vector(payment_dates, rate_vals, rate_dates):
     - The rates are assumed to be constant between rate_dates.
     - If the payment date falls beyond the last rate_date, the last rate in rate_vals is used for discounting the 
       remaining period.
-    - If the payment date is before the first rate_date, it returns a discount factor of 0 for that date.
+    - If the payment date is before the market close date, it returns a discount factor of 0.0 for that date.
+    - If the payment date is on the market close date, it returns a discount factor of 1.0 for that date.
     """
     # Initialize the result array
     ZCB_vector = np.zeros(len(payment_dates))
