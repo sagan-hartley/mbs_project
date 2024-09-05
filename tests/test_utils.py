@@ -17,7 +17,7 @@ class TestGetZCBVector(unittest.TestCase):
         given payment dates and discount rates.
         """
         payment_dates = [datetime(2025, 7, 1), datetime(2026, 1, 1), datetime(2026, 7, 1)]
-        rate_vals = [0.05, 0.04, 0.05]
+        rate_vals = [0.05, 0.04, 0.03]
         rate_dates = [datetime(2025, 1, 1), datetime(2026, 1, 1), datetime(2027, 1, 1)]
 
         expected_values = [
@@ -36,7 +36,7 @@ class TestGetZCBVector(unittest.TestCase):
         given payment dates and discount rates.
         """
         payment_dates = [datetime(2026, 1, 1), datetime(2027, 1, 1), datetime(2028, 1, 1)]
-        rate_vals = [0.05, 0.04, 0.05]
+        rate_vals = [0.05, 0.04, 0.03]
         rate_dates = [datetime(2025, 1, 1), datetime(2026, 1, 1), datetime(2027, 1, 1)]
 
         expected_values = [
@@ -55,7 +55,7 @@ class TestGetZCBVector(unittest.TestCase):
         given payment dates and discount rates.
         """
         payment_dates = [datetime(2025, 1, 1), datetime(2026, 1, 1), datetime(2027, 1, 1), datetime(2028, 1, 1)]
-        rate_vals = [0.05, 0.04, 0.05, 0.03]
+        rate_vals = [0.05, 0.04, 0.03, 0.06]
         rate_dates = [datetime(2026, 1, 1), datetime(2027, 1, 1), datetime(2028, 1, 1), datetime(2029, 1, 1)]
 
         expected_values = [
