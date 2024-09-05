@@ -35,48 +35,53 @@ def get_ZCB_vector(payment_dates, rate_vals, rate_dates):
     - If the payment date is before the market close date, it returns a discount factor of 0.0 for that date.
     - If the payment date is on the market close date, it returns a discount factor of 1.0 for that date.
     """
+    # Check to make sure the lengths of rate_vals and rate_dates are compatible
+    assert len(rate_vals) == len(rate_dates) or len(rate_vals) == len(rate_dates) - 1, \
+        "Rate_vals is not the same length or one index less than rate_dates"
+
+    # If a rate is not user input for the last rate date, concatenate with the last rate value
+    if len(rate_vals) == len(rate_dates) - 1:
+        rate_vals = np.concatenate([rate_vals, [rate_vals[-1]]])
+
     # Initialize the result array
     ZCB_vector = np.zeros(len(payment_dates))
 
     # Define the market close date
     market_close_date = rate_dates[0] 
 
-    for i, payment_date in enumerate(payment_dates):
+    # Convert rate_dates and payment_dates to numpy arrays for efficient operations
+    rate_dates = np.array(rate_dates)
+    payment_dates = np.array(payment_dates)
 
-        # If the payment date is before the market close date, it cannot be discounted, so return 0 
-        if payment_date < market_close_date:
-            ZCB_vector[i] = 0
+    # Calculate time deltas (in years) from the first rate_date
+    rate_time_deltas = np.array([(rd - market_close_date).days / 365.0 for rd in rate_dates])
+    payment_time_deltas = np.array([(pd - market_close_date).days / 365.0 for pd in payment_dates])
 
-        # If the payment date is the market close date just return 1.0 and break
-        elif payment_date == market_close_date:
-            ZCB_vector[i] = 1.0
 
-        else:
-            # Initialize the integral of the rate value step function
-            integral = 0.0
+    # Calculate the max payment date
+    max_payment_date = np.max(payment_dates)
 
-            # Iterate over the rate dates
-            for j in range(1, len(rate_dates)):
-                # Determine the time period, starting from the previous rate date
-                prev_date = rate_dates[j - 1]
-                curr_date = min(rate_dates[j], payment_date)
-            
-                # Calculate the time difference in years
-                time_delta = (curr_date - prev_date).days / 365.0
-            
-                # Update the integral with the rate from the previous period
-                integral += rate_vals[j - 1] * time_delta
-            
-                # Stop if we reach the payment date
-                if curr_date == payment_date:
-                    break
+    # If the max payment date is beyond the last rate date add another rate value equal to the last value in rate_vals
+    if max_payment_date > rate_dates[-1]:
+        rate_time_deltas = np.concatenate((rate_time_deltas, [(max_payment_date - market_close_date).days /365]))
+        rate_vals = np.concatenate([rate_vals, [rate_vals[-1]]])
 
-            # If the payment date is beyond the last rate_date, discount using the last rate
-            if payment_date > rate_dates[-1]:
-                time_delta = (payment_date - rate_dates[-1]).days / 365.0
-                integral += rate_vals[-1] * time_delta
+    # Calculate time differences between consecutive rate dates
+    time_diffs = np.diff(rate_time_deltas)
 
-            # Store the discount factor for the current payment date
-            ZCB_vector[i] = np.exp(-integral)
+    # Calculate the cumulative integral using the rate step function
+    # Multiply rate_vals[:-1] by the time differences and compute the cumulative sum
+    integral_values = np.concatenate(([0], np.cumsum(rate_vals[:-1] * time_diffs)))
+
+    # Interpolate the integral values at the payment dates
+    interpolated_integrals = np.interp(payment_time_deltas, rate_time_deltas, integral_values)
+
+    # Calculate the discount factors (ZCB values)
+    ZCB_vector = np.exp(-interpolated_integrals)
+
+    # Handle cases where payment dates are before the market close date
+    before_market_close = payment_time_deltas < 0
+    if any(before_market_close):
+        ZCB_vector[before_market_close] = 0
 
     return ZCB_vector
