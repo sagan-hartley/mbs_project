@@ -57,7 +57,6 @@ def get_ZCB_vector(payment_dates, rate_vals, rate_dates):
     rate_time_deltas = np.array([(rd - market_close_date).days / 365.0 for rd in rate_dates])
     payment_time_deltas = np.array([(pd - market_close_date).days / 365.0 for pd in payment_dates])
 
-
     # Calculate the max payment date
     max_payment_date = np.max(payment_dates)
 
