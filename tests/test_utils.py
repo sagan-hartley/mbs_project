@@ -55,14 +55,14 @@ class TestGetZCBVector(unittest.TestCase):
         given payment dates and discount rates.
         """
         payment_dates = [datetime(2025, 1, 1), datetime(2026, 1, 1), datetime(2027, 1, 1), datetime(2028, 1, 1)]
-        rate_vals = [0.05, 0.04, 0.05, 0.04]
+        rate_vals = [0.05, 0.04, 0.05, 0.03]
         rate_dates = [datetime(2026, 1, 1), datetime(2027, 1, 1), datetime(2028, 1, 1), datetime(2029, 1, 1)]
 
         expected_values = [
             0.0, # -1 years
             1.0, # 0 years
-            np.exp(-rate_vals[2] * 1.0),  # 1 year
-            np.exp(-rate_vals[2] * 1.0 - rate_vals[3] * 1.0) ,  # 2 years
+            np.exp(-rate_vals[0] * 1.0),  # 1 year
+            np.exp(-rate_vals[0] * 1.0 - rate_vals[1] * 1.0) ,  # 2 years
         ]
         result = get_ZCB_vector(payment_dates, rate_vals, rate_dates)
         np.testing.assert_array_almost_equal(result, expected_values, decimal=3)
