@@ -18,10 +18,10 @@ def get_ZCB_vector(payment_dates, rate_vals, rate_dates):
     rate_dates = np.array(rate_dates)
 
     # Initialize the result array
-    discount_factors = np.zeros(len(payment_dates))
+    ZCB_vector = np.zeros(len(payment_dates))
 
     for i, payment_date in enumerate(payment_dates):
-        discount_factor = 1.0
+        discount_factor = 0.0
 
         # Iterate over the rate dates
         for j in range(1, len(rate_dates)):
@@ -33,7 +33,7 @@ def get_ZCB_vector(payment_dates, rate_vals, rate_dates):
             time_period = (curr_date - prev_date).days / 365.0
             
             # Update the discount factor with the rate from the previous period
-            discount_factor *= np.exp(-rate_vals[j - 1] * time_period)
+            discount_factor += rate_vals[j - 1] * time_period
             
             # Stop if we reach the payment date
             if curr_date == payment_date:
@@ -42,9 +42,9 @@ def get_ZCB_vector(payment_dates, rate_vals, rate_dates):
          # If the payment date is beyond the last rate_date, discount using the last rate
         if payment_date > rate_dates[-1]:
             time_period = (payment_date - rate_dates[-1]).days / 365.0
-            discount_factor *= np.exp(-rate_vals[-1] * time_period)
+            discount_factor += rate_vals[-1] * time_period
 
         # Store the discount factor for the current payment date
-        discount_factors[i] = discount_factor
+        ZCB_vector[i] = np.exp(-discount_factor)
 
-    return discount_factors
+    return ZCB_vector
