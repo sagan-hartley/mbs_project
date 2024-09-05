@@ -13,10 +13,6 @@ def get_ZCB_vector(payment_dates, rate_vals, rate_dates):
     Returns:
     numpy.ndarray: An array of discount factors for the given payment dates.
     """
-    # Convert rate_vals and rate_dates to numpy arrays for efficient operations
-    rate_vals = np.array(rate_vals)
-    rate_dates = np.array(rate_dates)
-
     # Initialize the result array
     ZCB_vector = np.zeros(len(payment_dates))
 
