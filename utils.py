@@ -62,10 +62,10 @@ def get_ZCB_vector(payment_dates, rate_vals, rate_dates):
             curr_date = min(rate_dates[j], payment_date)
             
             # Calculate the time difference in years
-            time_period = (curr_date - prev_date).days / 365.0
+            time_delta = (curr_date - prev_date).days / 365.0
             
             # Update the integral with the rate from the previous period
-            integral += rate_vals[j - 1] * time_period
+            integral += rate_vals[j - 1] * time_delta
             
             # Stop if we reach the payment date
             if curr_date == payment_date:
@@ -73,8 +73,8 @@ def get_ZCB_vector(payment_dates, rate_vals, rate_dates):
 
          # If the payment date is beyond the last rate_date, discount using the last rate
         if payment_date > rate_dates[-1]:
-            time_period = (payment_date - rate_dates[-1]).days / 365.0
-            integral += rate_vals[-1] * time_period
+            time_delta = (payment_date - rate_dates[-1]).days / 365.0
+            integral += rate_vals[-1] * time_delta
 
         # Store the discount factor for the current payment date
         ZCB_vector[i] = np.exp(-integral)
