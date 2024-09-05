@@ -3,20 +3,56 @@ from datetime import datetime
 
 def get_ZCB_vector(payment_dates, rate_vals, rate_dates):
     """
-    Calculate the discount factors for each payment date given a set of rates and rate dates.
+    Calculate the discount factors for each payment date using a piecewise constant forward rate curve.
+
+    The function integrates the given step function of rates over time to compute the cumulative discount factor 
+    for each payment date, assuming that the rates remain constant between the corresponding rate_dates.
 
     Parameters:
-    payment_dates (list of datetime): A list of payment dates.
-    rate_vals (list of float): A list of discount rates (as decimals).
-    rate_dates (list of datetime): A list of the dates corresponding to rate_vals where the first entry is the market close date.
+    ----------
+    payment_dates : list of datetime
+        A list of future payment dates for which discount factors need to be calculated.
+    
+    rate_vals : list of float
+        A list of discount rates (in decimal form) corresponding to the rate_dates.
+        The rates are applied in a piecewise manner between the rate_dates.
+    
+    rate_dates : list of datetime
+        A list of dates where the rates change. The first entry represents the market close date (i.e., the 
+        starting point for the discounting process). Rates apply between consecutive dates.
 
     Returns:
-    numpy.ndarray: An array of discount factors for the given payment dates.
+    -------
+    numpy.ndarray
+        An array of discount factors for each payment date. If a payment date occurs before the first rate date, 
+        the discount factor will be 0.0 for that payment.
+    
+    Assumptions:
+    ------------
+    - The rates are assumed to be constant between rate_dates.
+    - If the payment date falls beyond the last rate_date, the last rate in rate_vals is used for discounting the 
+      remaining period.
+    - If the payment date is before the first rate_date, it returns a discount factor of 0 for that date.
     """
     # Initialize the result array
     ZCB_vector = np.zeros(len(payment_dates))
 
+    # Define the market close date
+    market_close_date = rate_dates[0] 
+
     for i, payment_date in enumerate(payment_dates):
+
+        # If the payment date is before the market close date, it cannot be discounted, so return 0 
+        if payment_date < market_close_date:
+            ZCB_vector[i] = 0
+            break
+
+        # If the payment date is the market close date just return 1.0 and break
+        if payment_date == market_close_date:
+            ZCB_vector[i] = 1.0
+            break
+
+        # Initialize the integral of the rate value step function
         integral = 0.0
 
         # Iterate over the rate dates
