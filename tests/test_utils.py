@@ -59,8 +59,8 @@ class TestGetZCBVector(unittest.TestCase):
         rate_dates = [datetime(2026, 1, 1), datetime(2027, 1, 1), datetime(2028, 1, 1), datetime(2029, 1, 1)]
 
         expected_values = [
-            0.0,
-            1.0, 
+            0.0, # -1 years
+            1.0, # 0 years
             np.exp(-rate_vals[2] * 1.0),  # 1 year
             np.exp(-rate_vals[2] * 1.0 - rate_vals[3] * 1.0) ,  # 2 years
         ]
