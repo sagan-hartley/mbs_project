@@ -99,5 +99,23 @@ class TestGetZCBVector(unittest.TestCase):
         result = get_ZCB_vector(payment_dates, rate_vals, rate_dates)
         np.testing.assert_array_almost_equal(result, expected_values, decimal=3)
 
+    def test_datetime64_vs_datetime(self):
+        """
+        Test that the generation of a vector of zero-coupon bond (ZCB) values
+        is the same when arguments are type datetime or datetime64[D]
+        """
+        np_payment_dates = [datetime(2026, 1, 1), datetime(2027, 1, 1), datetime(2028, 1, 1)]
+        np_rate_vals = [0.05, 0.04]
+        np_rate_dates = [datetime(2025, 1, 1), datetime(2026, 1, 1), datetime(2027, 1, 1)]
+
+        dt_payment_dates = [datetime(2026, 1, 1), datetime(2027, 1, 1), datetime(2028, 1, 1)]
+        dt_rate_vals = [0.05, 0.04]
+        dt_rate_dates = [datetime(2025, 1, 1), datetime(2026, 1, 1), datetime(2027, 1, 1)]
+
+        np_ZCB_vector = get_ZCB_vector(np_payment_dates, np_rate_vals, np_rate_dates)
+        dt_ZCB_vector = get_ZCB_vector(dt_payment_dates, dt_rate_vals, dt_rate_dates)
+
+        np.testing.assert_almost_equal(np_ZCB_vector, dt_ZCB_vector, decimal=3)
+
 if __name__ == '__main__':
     unittest.main()

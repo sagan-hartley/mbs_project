@@ -1,6 +1,8 @@
 import numpy as np
 from datetime import datetime
 
+DISC_DAYS_IN_YEAR = 365.0
+
 def get_ZCB_vector(payment_dates, rate_vals, rate_dates):
     """
     Calculate the discount factors for each payment date using a piecewise constant forward rate curve.
@@ -10,14 +12,14 @@ def get_ZCB_vector(payment_dates, rate_vals, rate_dates):
 
     Parameters:
     ----------
-    payment_dates : list of datetime
+    payment_dates : list of datetime or datetime64[D]
         A list of future payment dates for which discount factors need to be calculated.
     
     rate_vals : list of float
         A list of discount rates (in decimal form) corresponding to the rate_dates.
         The rates are applied in a piecewise manner between the rate_dates.
     
-    rate_dates : list of datetime
+    rate_dates : list of datetime or datetime64[D]
         A list of dates where the rates change. The first entry represents the market close date (i.e., the 
         starting point for the discounting process). Rates apply between consecutive dates.
 
@@ -46,23 +48,27 @@ def get_ZCB_vector(payment_dates, rate_vals, rate_dates):
     # Initialize the result array
     ZCB_vector = np.zeros(len(payment_dates))
 
-    # Define the market close date
-    market_close_date = rate_dates[0] 
-
-    # Convert rate_dates and payment_dates to numpy arrays for efficient operations
-    rate_dates = np.array(rate_dates)
-    payment_dates = np.array(payment_dates)
+    # Define the market close date and convert rate_dates and payment_dates to numpy arrays for efficient operations
+    # If inputs are datetime objects, convert them to type datetime64[D] for vectorization
+    if isinstance(rate_dates[0], datetime):
+        market_close_date = np.datetime64(rate_dates[0], 'D')
+        rate_dates = np.array(rate_dates, dtype = 'datetime64[D]')
+        payment_dates = np.array(payment_dates, dtype = 'datetime64[D]')
+    else:
+        market_close_date = rate_dates[0]
+        rate_dates = np.array(rate_dates)
+        payment_dates = np.array(payment_dates)
 
     # Calculate time deltas (in years) from the first rate_date
-    rate_time_deltas = np.array([(rd - market_close_date).days / 365.0 for rd in rate_dates])
-    payment_time_deltas = np.array([(pd - market_close_date).days / 365.0 for pd in payment_dates])
+    rate_time_deltas = (rate_dates - market_close_date).astype(float) / DISC_DAYS_IN_YEAR
+    payment_time_deltas = (payment_dates - market_close_date).astype(float) / DISC_DAYS_IN_YEAR
 
     # Calculate the max payment date
     max_payment_date = np.max(payment_dates)
 
     # If the max payment date is beyond the last rate date add another rate value equal to the last value in rate_vals
     if max_payment_date > rate_dates[-1]:
-        rate_time_deltas = np.concatenate((rate_time_deltas, [(max_payment_date - market_close_date).days /365]))
+        rate_time_deltas = np.concatenate((rate_time_deltas, [(max_payment_date - market_close_date).astype(int) / DISC_DAYS_IN_YEAR]))
         rate_vals = np.concatenate([rate_vals, [rate_vals[-1]]])
 
     # Calculate time differences between consecutive rate dates
