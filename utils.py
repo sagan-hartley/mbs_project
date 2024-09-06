@@ -68,7 +68,7 @@ def get_ZCB_vector(payment_dates, rate_vals, rate_dates):
 
     # If the max payment date is beyond the last rate date add another rate value equal to the last value in rate_vals
     if max_payment_date > rate_dates[-1]:
-        rate_time_deltas = np.concatenate((rate_time_deltas, [(max_payment_date - market_close_date).astype(int) / DISC_DAYS_IN_YEAR]))
+        rate_time_deltas = np.concatenate((rate_time_deltas, [(max_payment_date - market_close_date).astype(float) / DISC_DAYS_IN_YEAR]))
         rate_vals = np.concatenate([rate_vals, [rate_vals[-1]]])
 
     # Calculate time differences between consecutive rate dates
