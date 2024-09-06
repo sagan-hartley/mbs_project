@@ -77,7 +77,7 @@ class TestGetZCBVector(unittest.TestCase):
         rate_vals = [0.05, 0.04, 0.03, 0.07, 0.08]
         rate_dates = [datetime(2025, 1, 1), datetime(2026, 1, 1), datetime(2027, 1, 1)]
 
-        with pytest.raises(AssertionError, match="Rate_vals is not the same length or one index less than rate_dates"):
+        with pytest.raises(ValueError, match="Rate_vals should be the same length or one index less than rate_dates"):
             get_ZCB_vector(payment_dates, rate_vals, rate_dates)
 
     def test_rate_values_too_short(self):

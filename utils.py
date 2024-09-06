@@ -38,8 +38,8 @@ def get_ZCB_vector(payment_dates, rate_vals, rate_dates):
     - If the payment date is on the market close date, it returns a discount factor of 1.0 for that date.
     """
     # Check to make sure the lengths of rate_vals and rate_dates are compatible
-    assert len(rate_vals) == len(rate_dates) or len(rate_vals) == len(rate_dates) - 1, \
-        "Rate_vals is not the same length or one index less than rate_dates"
+    if len(rate_vals) != len(rate_dates) and len(rate_vals) != len(rate_dates) - 1:
+        raise ValueError("Rate_vals should be the same length or one index less than rate_dates")
 
     # If a rate is not user input for the last rate date, concatenate with the last rate value
     if len(rate_vals) == len(rate_dates) - 1:
