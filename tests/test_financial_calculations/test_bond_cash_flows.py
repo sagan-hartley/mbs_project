@@ -1,7 +1,7 @@
 import unittest
 import numpy as np
 from datetime import datetime
-from financial_calculations.bond_cash_flows_and_pricing import (
+from financial_calculations.bond_cash_flows import (
     create_semi_bond_cash_flows
 )
 
