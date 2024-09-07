@@ -60,7 +60,7 @@ def bootstrap_forward_curve(cmt_data, market_close_date, par_value, initial_gues
             return (price - par_value)**2
 
         # Minimize the objective function using a 'L-BFGS-B' method to find the best spot rate
-        result = minimize(objective, x0=[initial_guess], method='L-BFGS-B', bounds=[(0, 1)])
+        result = minimize(objective, x0=[initial_guess], bounds=[(0, 1)])
 
         if result.success:
             spot_rates.append(result.x[0])
