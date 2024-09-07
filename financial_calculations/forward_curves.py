@@ -39,33 +39,30 @@ def bootstrap_forward_curve(cmt_data, market_close_date, par_value, initial_gues
         If minimization fails to converge for a specific bond.
     """
 
-    spot_rate_dates = []
-    spot_rates = []
+    spot_rate_dates = np.array([market_close_date])
+    spot_rates = np.array([])
 
     for maturity_years, coupon in cmt_data:
         # Append the spot rate date associated with the current maturity year
-        spot_rate_dates = np.concatenate([spot_rate_dates, [market_close_date + relativedelta(years=maturity_years)]])
-        print(spot_rate_dates)
+        spot_rate_dates = np.append(spot_rate_dates, market_close_date + relativedelta(years=maturity_years))
 
         # Generate cash flows for the bond
         payment_dates, cash_flows = create_semi_bond_cash_flows(market_close_date, par_value, coupon, maturity_years)
 
         # Objective function to minimize the squared difference between the bond price and the par value
         def objective(rate: float):
-            discount_rates = np.concatenate([spot_rates, rate])  # Append the current guess for the rate
-            price = discount_cash_flows(payment_dates, cash_flows, discount_rates, spot_rate_dates)  # Use rate dates
-            print((price - par_value)**2)
-            print(price)
+            discount_rates = np.append(spot_rates, rate) # Append the spot rate date associated with the current maturity year
+            price = discount_cash_flows(payment_dates, cash_flows, discount_rates, spot_rate_dates)  # Discount the cash flows using the new spot rate
 
-            return (price - par_value)**2
+            return (price - par_value)**2 # Return the difference squared as the quantity to be minimized
 
         # Minimize the objective function using a 'L-BFGS-B' method to find the best spot rate
-        result = minimize(objective, x0=[initial_guess], bounds=[(0, 1)])
+        result = minimize(objective, x0=initial_guess, method='L-BFGS-B', bounds=[(0, 1)], options={'ftol': 1e-4}) # We set a tolerance level to make sure the minimizer converges
 
         if result.success:
-            spot_rates.append(result.x[0])
+            spot_rates = np.append(spot_rates, result.x[0])
         else:
             raise ValueError(f"Minimization did not converge for payment date {payment_dates[-1]}.")
 
-    return np.array(spot_rate_dates), np.array(spot_rates)
+    return spot_rate_dates, spot_rates
 
