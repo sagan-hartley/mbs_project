@@ -44,8 +44,8 @@ def bootstrap_forward_curve(cmt_data, market_close_date, par_value, initial_gues
 
     for maturity_years, coupon in cmt_data:
         # Append the spot rate date associated with the current maturity year
-        print(spot_rate_dates)
         spot_rate_dates = np.concatenate([spot_rate_dates, [market_close_date + relativedelta(years=maturity_years)]])
+        print(spot_rate_dates)
 
         # Generate cash flows for the bond
         payment_dates, cash_flows = create_semi_bond_cash_flows(market_close_date, par_value, coupon, maturity_years)
@@ -55,11 +55,12 @@ def bootstrap_forward_curve(cmt_data, market_close_date, par_value, initial_gues
             discount_rates = np.concatenate([spot_rates, rate])  # Append the current guess for the rate
             price = discount_cash_flows(payment_dates, cash_flows, discount_rates, spot_rate_dates)  # Use rate dates
             print((price - par_value)**2)
+            print(price)
 
             return (price - par_value)**2
 
         # Minimize the objective function using a 'L-BFGS-B' method to find the best spot rate
-        result = minimize(objective, x0=initial_guess, method='L-BFGS-B', bounds=[(0, 1)])
+        result = minimize(objective, x0=[initial_guess], method='L-BFGS-B', bounds=[(0, 1)])
 
         if result.success:
             spot_rates.append(result.x[0])
