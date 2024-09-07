@@ -3,7 +3,8 @@ from datetime import datetime
 import numpy as np
 import pytest
 from utils import ( 
-    get_ZCB_vector
+    get_ZCB_vector,
+    discount_cash_flows
 )
 
 class TestGetZCBVector(unittest.TestCase):
@@ -116,6 +117,54 @@ class TestGetZCBVector(unittest.TestCase):
         dt_ZCB_vector = get_ZCB_vector(dt_payment_dates, dt_rate_vals, dt_rate_dates)
 
         np.testing.assert_almost_equal(np_ZCB_vector, dt_ZCB_vector, decimal=3)
+
+class TestDiscountCashFlows(unittest.TestCase):
+
+    def setUp(self):
+        # Set up common test data
+        self.payment_dates = [
+            np.datetime64('2025-02-13', 'D'),
+            np.datetime64('2025-08-13', 'D'),
+            np.datetime64('2026-02-13', 'D'),
+            np.datetime64('2026-08-13', 'D'),
+            np.datetime64('2027-02-13', 'D')
+        ]
+        self.cash_flows = np.array([10000, 10000, 10000, 10000, 110000])  # 10,000 every 6 months, final payment 110,000
+        self.discount_rate_vals = np.array([0.02, 0.025, 0.03, 0.035, 0.04])  # Discount rates corresponding to each payment date
+        self.discount_rate_dates = [
+            np.datetime64('2025-02-13', 'D'),
+            np.datetime64('2025-08-13', 'D'),
+            np.datetime64('2026-02-13', 'D'),
+            np.datetime64('2026-08-13', 'D'),
+            np.datetime64('2027-02-13', 'D')
+        ]
+
+    def test_basic_functionality(self):
+        """
+        Test that the discount_cash_flows function calculates the present value correctly.
+        """
+        expected_present_value = 143420.645  # Replace with expected present value calculated manually or with a trusted tool
+        present_value = discount_cash_flows(
+            self.payment_dates,
+            self.cash_flows,
+            self.discount_rate_vals,
+            self.discount_rate_dates
+        )
+        self.assertAlmostEqual(present_value, expected_present_value, places=2)
+
+    def test_mismatched_array_lengths(self):
+        """
+        Test that the function raises a ValueError when the length of cash flows
+        does not match the number of payment dates.
+        """
+        mismatched_cash_flows = np.array([10000, 10000, 10000, 10000])  # One less cash flow
+        with self.assertRaises(ValueError):
+            discount_cash_flows(
+                self.payment_dates,
+                mismatched_cash_flows,
+                self.discount_rate_vals,
+                self.discount_rate_dates
+            )
 
 if __name__ == '__main__':
     unittest.main()

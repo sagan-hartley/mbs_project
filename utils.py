@@ -90,3 +90,35 @@ def get_ZCB_vector(payment_dates, rate_vals, rate_dates):
         ZCB_vector[before_market_close] = 0
 
     return ZCB_vector
+
+def discount_cash_flows(payment_dates, cash_flows, discount_rate_vals, discount_rate_dates):
+    """
+    Discounts a series of cash flows to their present value using variable discount rates.
+
+    Parameters:
+    -----------
+    payment_dates : np.ndarray
+        Array of datetime or datetime64[D} objects representing the payment dates.
+    cash_flows : np.ndarray
+        Array of cash flows corresponding to each payment date.
+    discount_rates : np.ndarray
+        Array of discount rates (as decimals) corresponding to each discount rate date.
+    discount_rate_dates : np.ndarray
+        Array of datetime or datetime64[D] objects representing the dates on which the discount rates apply.
+
+    Returns:
+    --------
+    float:
+        The present value of the cash flows.
+    """
+    # Check that payment dates and cash flows are the same length so the dot product computes correctly
+    if len(payment_dates) != len(cash_flows):
+        raise ValueError("Payment_dates and cash_flows should have the same length")
+    
+    # Calculate the ZCB vector using the market close date, payment dates, and discount rates
+    zcb_values = get_ZCB_vector(payment_dates, discount_rate_vals, discount_rate_dates)
+
+    # Discount the cash flows to their present value using the dot product of the cash flows and ZCB vectors
+    present_value = np.dot(cash_flows, zcb_values)
+
+    return present_value
