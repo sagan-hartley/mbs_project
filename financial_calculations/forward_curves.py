@@ -39,6 +39,12 @@ def bootstrap_forward_curve(cmt_data, market_close_date, par_value, initial_gues
         If minimization fails to converge for a specific bond.
     """
 
+    # If the market close date is input as a datetime64[D] type, convert to datetime for relativedelta operations in the future
+    if isinstance(market_close_date, np.datetime64): 
+        market_close_date_dt = market_close_date.astype(datetime)
+        market_close_date = datetime.combine(market_close_date_dt, datetime.min.time()) # This adds the HMS 00:00:00 to the datetime object 
+            # which makes it identical to a datetime object initialized with the month, day, and year of the given numpy datetime64[D]
+        
     spot_rate_dates = np.array([market_close_date])
     spot_rates = np.array([])
 
