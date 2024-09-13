@@ -1,7 +1,10 @@
 import unittest
 from datetime import datetime
 import numpy as np
-from financial_calculations.forward_curves import bootstrap_forward_curve
+from financial_calculations.forward_curves import (
+    bootstrap_forward_curve,
+    bootstrap_finer_forward_curve
+)
 
 
 class TestBootstrapForwardCurve(unittest.TestCase):
@@ -149,6 +152,50 @@ class TestBootstrapForwardCurve(unittest.TestCase):
             # Ensure the spot rates are nearly equal across runs (accounting for floating point precision)
             np.testing.assert_array_almost_equal(spot_rates1, spot_rates2)
 
+class TestBootstrapFinerForwardCurve(unittest.TestCase):
+
+    def setUp(self):
+        # Example bond data
+        self.cmt_data = [(1, 0.03), (2, 0.04), (3, 0.05)]
+        self.market_close_date = datetime(2024, 8, 10)
+        self.par_value = 1000
+
+    def test_monthly_frequency(self):
+        # Test for monthly frequency
+        spot_rate_dates, spot_rates = bootstrap_finer_forward_curve(
+            self.cmt_data, self.market_close_date, self.par_value, frequency='monthly'
+        )
+        
+        self.assertEqual(len(spot_rate_dates), 37)  # Expecting 3 years of monthly rates
+        self.assertEqual(len(spot_rates), 36)
+        self.assertGreaterEqual(min(spot_rates), 0)  # Rates should be non-negative
+        self.assertLessEqual(max(spot_rates), 1)     # Rates should not exceed 1
+
+    def test_weekly_frequency(self):
+        # Test for weekly frequency
+        spot_rate_dates, spot_rates = bootstrap_finer_forward_curve(
+            self.cmt_data, self.market_close_date, self.par_value, frequency='weekly'
+        )
+        
+        self.assertEqual(len(spot_rate_dates), 157)  # Expecting 3 years of weekly rates (52*3) + 1 (start date)
+        self.assertEqual(len(spot_rates), 156)
+        self.assertGreaterEqual(min(spot_rates), 0)
+        self.assertLessEqual(max(spot_rates), 1)
+
+    def test_invalid_frequency(self):
+        # Test for invalid frequency input
+        with self.assertRaises(ValueError):
+            bootstrap_finer_forward_curve(self.cmt_data, self.market_close_date, self.par_value, frequency='daily')
+
+    def test_datetime64_market_close_date(self):
+        # Test with numpy datetime64 input for market_close_date
+        market_close_date_np = np.datetime64('2024-08-10')
+        spot_rate_dates, spot_rates = bootstrap_finer_forward_curve(
+            self.cmt_data, market_close_date_np, self.par_value, frequency='monthly'
+        )
+        
+        self.assertEqual(len(spot_rate_dates), 37)
+        self.assertEqual(len(spot_rates), 36)
 
 if __name__ == '__main__':
     unittest.main()
