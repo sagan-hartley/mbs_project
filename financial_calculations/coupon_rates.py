@@ -1,14 +1,11 @@
 import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
 from dateutil.relativedelta import relativedelta
-from scipy.optimize import minimize
 from utils import (
-    discount_cash_flows,
     get_ZCB_vector
 )
 from financial_calculations.bond_cash_flows import (
-    create_semi_bond_cash_flows,
     PMTS_PER_YEAR
 )
 
