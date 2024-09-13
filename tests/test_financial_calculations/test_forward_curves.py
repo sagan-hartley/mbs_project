@@ -56,6 +56,8 @@ class TestBootstrapForwardCurve(unittest.TestCase):
         self.assertEqual(len(spot_rates), len(self.cmt_data))
 
         # Spot rates should be between 0 and 1
+        # We will test that the actual values of the forward curve rates are correct in tests/test_financial_calculations/test_coupon_rates.py
+        # by comparing these rates to the coupons produced when the start date of the coupon is on a spot rate date
         self.assertTrue(np.all(np.array(spot_rates) >= 0))
         self.assertTrue(np.all(np.array(spot_rates) <= 1))
 
