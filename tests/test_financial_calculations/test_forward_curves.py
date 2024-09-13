@@ -187,8 +187,10 @@ class TestBootstrapFinerForwardCurve(unittest.TestCase):
             self.cmt_data, self.market_close_date, self.par_value, frequency='monthly'
         )
         
+        # We will test that the actual values of the forward curve rates are correct in tests/test_financial_calculations/test_coupon_rates.py
+        # by comparing these rates to the coupons produced when the start date of the coupon is on a disc rate date
         self.assertEqual(len(disc_rate_dates), 37)  # Expecting 3 years of monthly rates
-        self.assertEqual(len(disc_rates), 37)
+        self.assertEqual(len(disc_rates), 37) # These lengths are (12*3) + 1 (start date)
         self.assertGreaterEqual(min(disc_rates), 0)  # Rates should be non-negative
         self.assertLessEqual(max(disc_rates), 1)     # Rates should not exceed 1
 
