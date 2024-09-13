@@ -9,7 +9,7 @@ from financial_calculations.bond_cash_flows import (
     PMTS_PER_YEAR
 )
 
-def calculate_coupon_rate(start_date, maturity_years, par_value, forward_curve):
+def calculate_coupon_rate(start_date, maturity_years, forward_curve):
     """
     Calculate the coupon rate required to produce a par price for a bond.
     
@@ -19,8 +19,6 @@ def calculate_coupon_rate(start_date, maturity_years, par_value, forward_curve):
         The start date of the bond.
     maturity_years : int
         The maturity years of the bond.
-    par_value : float
-        The par value of the bond.
     forward_curve : tuple
         A tuple containing two elements:
         - disc_rate_dates (np.ndarray): Array of discount rate dates.
@@ -60,6 +58,6 @@ def calculate_coupon_rate(start_date, maturity_years, par_value, forward_curve):
         final_discount = discount_factors[-1]   
 
         # Calculate the coupon rate
-        coupon_rate = par_value * (initial_discount - final_discount) / (annuity * par_value)
+        coupon_rate = (initial_discount - final_discount) / annuity
 
         return coupon_rate

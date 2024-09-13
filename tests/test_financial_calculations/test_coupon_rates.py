@@ -43,7 +43,7 @@ class TestCalculateCouponRate(unittest.TestCase):
         Verifies that the coupon rate returned matches the spot rate for the market close date.
         """
         start_date = self.market_close_date
-        coupon_rate = calculate_coupon_rate(start_date, self.maturity_years, self.par_value, self.forward_curve)
+        coupon_rate = calculate_coupon_rate(start_date, self.maturity_years, self.forward_curve)
         # The expected rate should match the spot rate at the market close date
         expected_rate = self.cmt_data[1][1]  # The coupon rate corresponding to the market close date
         self.assertAlmostEqual(coupon_rate, expected_rate, places=5)
@@ -54,7 +54,7 @@ class TestCalculateCouponRate(unittest.TestCase):
         Validates that the coupon rate is within the expected bounds [0, 1].
         """
         start_date = self.market_close_date + relativedelta(months = 1)
-        coupon_rate = calculate_coupon_rate(start_date, self.maturity_years, self.par_value, self.forward_curve)
+        coupon_rate = calculate_coupon_rate(start_date, self.maturity_years, self.forward_curve)
         # Coupon rate should be within the range [0, 1]
         self.assertTrue(coupon_rate >= 0, "Coupon rate should be >= 0")
         self.assertTrue(coupon_rate <= 1, "Coupon rate should be <= 1")
@@ -66,7 +66,7 @@ class TestCalculateCouponRate(unittest.TestCase):
         """
         start_date = self.market_close_date - relativedelta(months = 1)
         with self.assertRaises(ValueError):
-            calculate_coupon_rate(start_date, self.maturity_years, self.par_value, self.forward_curve)
+            calculate_coupon_rate(start_date, self.maturity_years, self.forward_curve)
 
     def test_coupon_rate_bounds(self):
         """
@@ -74,7 +74,7 @@ class TestCalculateCouponRate(unittest.TestCase):
         Ensures that the returned coupon rate adheres to this range.
         """
         start_date = datetime(2024, 8, 10)
-        coupon_rate = calculate_coupon_rate(start_date, self.maturity_years, self.par_value, self.forward_curve)
+        coupon_rate = calculate_coupon_rate(start_date, self.maturity_years, self.forward_curve)
         self.assertGreaterEqual(coupon_rate, 0, "Coupon rate should be >= 0")
         self.assertLessEqual(coupon_rate, 1, "Coupon rate should be <= 1")
 
