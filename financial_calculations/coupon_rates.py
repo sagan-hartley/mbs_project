@@ -27,7 +27,7 @@ def calculate_coupon_rate(start_date, maturity_years, forward_curve):
     Returns:
     --------
     float:
-        The coupon rate required to produce the bond.
+        The coupon rate required to produce a par bond.
     
     Raises:
     -------
