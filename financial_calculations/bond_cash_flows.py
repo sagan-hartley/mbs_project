@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
-FRAC_OF_YEAR = 2
+PMTS_PER_YEAR = 2
 
 def create_semi_bond_cash_flows(effective_date, balance, coupon, maturity_years):
     """
@@ -54,13 +54,13 @@ def create_semi_bond_cash_flows(effective_date, balance, coupon, maturity_years)
         raise ValueError("Day of the month should not be greater than 28 to avoid end-of-month issues.")
 
     # Calculate the number of payments (semiannual payments)
-    num_payments = int(FRAC_OF_YEAR * maturity_years)
+    num_payments = int(PMTS_PER_YEAR * maturity_years)
 
     # Generate the payment dates by adding multiples of 6-month periods and change type to datetime64[D] object
     payment_dates = [np.datetime64(effective_date + relativedelta(months=6 * i), 'D') for i in range(1, num_payments + 1)]
 
     # Initialize the cash flows array with values balance * (coupon /2) and add the balance to the final payment
-    cash_flows = np.ones(num_payments) * balance * (coupon / FRAC_OF_YEAR)
+    cash_flows = np.ones(num_payments) * balance * (coupon / PMTS_PER_YEAR)
     cash_flows[-1] += balance
     
     return payment_dates, cash_flows
