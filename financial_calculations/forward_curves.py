@@ -20,11 +20,11 @@ def bootstrap_forward_curve(cmt_data, market_close_date, par_value, initial_gues
         Each tuple contains (maturity_years, coupon_rate) for bonds.
         Coupon rate should be expressed as a decimal (e.g., 5% as 0.05).
     market_close_date : datetime or datetime64[D]
-        The market close date from which the cash flows are discounted.
+        The market close date to which the cash flows are discounted.
     par_value : float
         The par value of the bond.
     initial_guess : float, optional
-        The initial guess for each spot rate, default is 0.03.
+        The initial guess for each spot rate, default is 0.04.
         
     Returns:
     --------
@@ -63,7 +63,8 @@ def bootstrap_forward_curve(cmt_data, market_close_date, par_value, initial_gues
             return (price - par_value)**2 # Return the difference squared as the quantity to be minimized
 
         # Minimize the objective function using a 'L-BFGS-B' method to find the best spot rate
-        result = minimize(objective, x0=initial_guess, method='L-BFGS-B', bounds=[(0, 1)], options={'ftol': 1e-4}) # We set a tolerance level to make sure the minimizer converges
+        # We set a tolerance level based on the par value to make sure the minimizer converges
+        result = minimize(objective, x0=initial_guess, method='L-BFGS-B', bounds=[(0, 1)], options={'ftol': par_value * 1e-7}) 
 
         if result.success:
             spot_rates = np.append(spot_rates, result.x[0])

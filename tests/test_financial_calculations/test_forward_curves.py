@@ -21,7 +21,7 @@ class TestBootstrapForwardCurve(unittest.TestCase):
         Set up common data used across multiple tests.
         
         This includes a set of bond data (`cmt_data`), a market close date, 
-        a par value for the bonds, and an initial guess for the optimization.
+        and a par value for the bonds.
         """
         # Test data for bond maturities and coupon rates
         self.cmt_data = [
@@ -32,9 +32,7 @@ class TestBootstrapForwardCurve(unittest.TestCase):
         # Market close date in datetime format
         self.market_close_date = datetime(2024, 8, 10)
         # Par value for the bonds
-        self.par_value = 1000
-        # Initial guess for the spot rate optimization
-        self.initial_guess = 0.03
+        self.par_value = 100
 
     def test_basic_bootstrap(self):
         """

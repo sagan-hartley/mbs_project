@@ -1,5 +1,6 @@
 import unittest
 from datetime import datetime
+from dateutil.relativedelta import relativedelta
 import numpy as np
 from financial_calculations.coupon_rates import calculate_coupon_rate
 from financial_calculations.forward_curves import bootstrap_forward_curve
@@ -29,7 +30,7 @@ class TestCalculateCouponRate(unittest.TestCase):
         # Market close date in datetime format
         self.market_close_date = datetime(2024, 8, 10)
         # Par value for the bonds
-        self.par_value = 1000
+        self.par_value = 100
 
         # Generate forward curve using bootstrap_forward_curve function
         self.forward_curve = bootstrap_forward_curve(self.cmt_data, self.market_close_date, self.par_value)
@@ -41,18 +42,18 @@ class TestCalculateCouponRate(unittest.TestCase):
         Test when the start date is exactly the market close date.
         Verifies that the coupon rate returned matches the spot rate for the market close date.
         """
-        start_date = datetime(2024, 8, 10)
+        start_date = self.market_close_date
         coupon_rate = calculate_coupon_rate(start_date, self.maturity_years, self.par_value, self.forward_curve)
         # The expected rate should match the spot rate at the market close date
         expected_rate = self.cmt_data[1][1]  # The coupon rate corresponding to the market close date
-        self.assertAlmostEqual(coupon_rate, expected_rate, places=4)
+        self.assertAlmostEqual(coupon_rate, expected_rate, places=5)
 
     def test_start_date_is_after_market_close_date(self):
         """
         Test when the start date is after the market close date.
         Validates that the coupon rate is within the expected bounds [0, 1].
         """
-        start_date = datetime(2024, 9, 10)
+        start_date = self.market_close_date + relativedelta(months = 1)
         coupon_rate = calculate_coupon_rate(start_date, self.maturity_years, self.par_value, self.forward_curve)
         # Coupon rate should be within the range [0, 1]
         self.assertTrue(coupon_rate >= 0, "Coupon rate should be >= 0")
@@ -63,7 +64,7 @@ class TestCalculateCouponRate(unittest.TestCase):
         Test when the start date is before the market close date.
         Ensures that a ValueError is raised in this case to handle invalid input.
         """
-        start_date = datetime(2024, 7, 10)
+        start_date = self.market_close_date - relativedelta(months = 1)
         with self.assertRaises(ValueError):
             calculate_coupon_rate(start_date, self.maturity_years, self.par_value, self.forward_curve)
 
