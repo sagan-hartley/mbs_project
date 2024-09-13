@@ -4,13 +4,15 @@ from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 from scipy.optimize import minimize
 from utils import (
-    discount_cash_flows
+    discount_cash_flows,
+    get_ZCB_vector
 )
 from financial_calculations.bond_cash_flows import (
-    create_semi_bond_cash_flows
+    create_semi_bond_cash_flows,
+    FRAC_OF_YEAR
 )
 
-def calculate_coupon_rate(start_date, maturity_years, par_value, forward_curve, initial_guess=0.04):
+def calculate_coupon_rate(start_date, maturity_years, par_value, forward_curve):
     """
     Calculate the coupon rate required to produce a par price for a bond.
     
@@ -26,8 +28,6 @@ def calculate_coupon_rate(start_date, maturity_years, par_value, forward_curve, 
         A tuple containing two elements:
         - payment_dates (np.ndarray): Array of payment dates as datetime objects.
         - spot_rates (np.ndarray): Array of spot rates corresponding to each payment date.
-    initial_guess : float, optional
-        Initial guess for the coupon rate. Default is 0.04 (4%).
 
     Returns:
     --------
@@ -38,7 +38,6 @@ def calculate_coupon_rate(start_date, maturity_years, par_value, forward_curve, 
     -------
     ValueError:
         If the start date is before the market close date.
-        If the minimization process does not converge to a solution for the coupon rate.
     """
     spot_rate_dates, spot_rates = forward_curve
     market_close_date = spot_rate_dates[0]
@@ -50,28 +49,26 @@ def calculate_coupon_rate(start_date, maturity_years, par_value, forward_curve, 
     # Validate start date
     if start_date < market_close_date:
         raise ValueError("Start date is not on or after the market close date.")
-    
-    # If start_date is one of the spot rate dates, return the corresponding rate
-    elif np.isin(start_date, spot_rate_dates):
-        rate_index = np.where(start_date == spot_rate_dates)[0][0]
-        return spot_rates[rate_index]
 
     else:
-        # Objective function to minimize the squared difference between bond price and par value
-        def objective(coupon_rate):
-            # Create semiannual bond cash flows
-            payment_dates, cash_flows = create_semi_bond_cash_flows(start_date, par_value, coupon_rate, maturity_years)
-            
-            # Calculate the bond price by discounting cash flows
-            price = discount_cash_flows(payment_dates, cash_flows, spot_rates, spot_rate_dates)
-            
-            # Objective: the squared difference between bond price and par value
-            return (price - par_value)**2
+        # Generate the bond payment dates by adding multiples of 6-month periods
+        payment_dates = [start_date + relativedelta(months=6 * i) for i in range(FRAC_OF_YEAR * maturity_years + 1)]
+        print(payment_dates)
 
-        # Minimize the objective function to find the coupon rate that produces par price
-        result = minimize(objective, x0=initial_guess, method='L-BFGS-B', bounds=[(0, 1)], options={'ftol': 1e-4})
-        
-        if result.success:
-            return result.x[0]  # Return the calculated coupon rate
-        else:
-            raise ValueError("Minimization did not converge for the coupon rate calculation.")
+        # Calculate the discount factors for the bond
+        discount_factors = get_ZCB_vector(payment_dates, spot_rates, spot_rate_dates)
+        print(discount_factors)
+
+        # Define some quantities useful for the coupon rate calculationb
+        discount_sum = np.sum(discount_factors[1:])
+        initial_discount = discount_factors[0] 
+        final_discount = discount_factors[-1]   
+
+        print(discount_sum)
+        print(initial_discount)
+        print(final_discount)
+
+        coupon_rate = par_value * (initial_discount - final_discount) / (1/FRAC_OF_YEAR * discount_sum * par_value)
+        print(coupon_rate)  
+
+        return coupon_rate
