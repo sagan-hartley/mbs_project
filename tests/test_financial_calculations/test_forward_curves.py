@@ -6,7 +6,6 @@ from financial_calculations.forward_curves import (
     bootstrap_finer_forward_curve
 )
 
-
 class TestBootstrapForwardCurve(unittest.TestCase):
     """
     Unit test class for testing the `bootstrap_forward_curve` function.
@@ -42,25 +41,25 @@ class TestBootstrapForwardCurve(unittest.TestCase):
         Test basic functionality of `bootstrap_forward_curve` with standard input.
         
         This checks:
-        - The length of spot rate dates and rates returned.
-        - That spot rates are bounded within the range [0, 1].
+        - The length of disc rate dates and rates returned.
+        - That disc rates are bounded within the range [0, 1].
         """
-        spot_rate_dates, spot_rates = bootstrap_forward_curve(
+        disc_rate_dates, disc_rates = bootstrap_forward_curve(
             self.cmt_data, self.market_close_date, self.par_value
         )
 
-        # Check that the number of spot rate dates equals the number of maturities + 1 (for the market close date)
+        # Check that the number of disc rate dates equals the number of maturities + 1 (for the market close date)
         self.assertEqual(
-            len(spot_rate_dates), len(self.cmt_data) + 1
+            len(disc_rate_dates), len(self.cmt_data) + 1
         )
-        # Check that the number of spot rates equals the number of maturities
-        self.assertEqual(len(spot_rates), len(self.cmt_data))
+        # Check that the number of disc rates equals the number of maturities
+        self.assertEqual(len(disc_rates), len(self.cmt_data))
 
-        # Spot rates should be between 0 and 1
+        # Disc rates should be between 0 and 1
         # We will test that the actual values of the forward curve rates are correct in tests/test_financial_calculations/test_coupon_rates.py
-        # by comparing these rates to the coupons produced when the start date of the coupon is on a spot rate date
-        self.assertTrue(np.all(np.array(spot_rates) >= 0))
-        self.assertTrue(np.all(np.array(spot_rates) <= 1))
+        # by comparing these rates to the coupons produced when the start date of the coupon is on a disc rate date
+        self.assertTrue(np.all(np.array(disc_rates) >= 0))
+        self.assertTrue(np.all(np.array(disc_rates) <= 1))
 
     def test_initial_guess(self):
         """
@@ -72,19 +71,19 @@ class TestBootstrapForwardCurve(unittest.TestCase):
         # Different initial guesses for the optimization
         initial_guesses = [0.01, 0.05, 0.0, 1.0]
         for guess in initial_guesses:
-            spot_rate_dates, spot_rates = bootstrap_forward_curve(
+            disc_rate_dates, disc_rates = bootstrap_forward_curve(
                 self.cmt_data, self.market_close_date, self.par_value, initial_guess=guess
             )
 
-            # Check the length of spot rate dates and rates
+            # Check the length of disc rate dates and rates
             self.assertEqual(
-                len(spot_rate_dates), len(self.cmt_data) + 1
+                len(disc_rate_dates), len(self.cmt_data) + 1
             )
-            self.assertEqual(len(spot_rates), len(self.cmt_data))
+            self.assertEqual(len(disc_rates), len(self.cmt_data))
 
-            # Spot rates should still be bounded between 0 and 1
-            self.assertTrue(np.all(np.array(spot_rates) >= 0))
-            self.assertTrue(np.all(np.array(spot_rates) <= 1))
+            # Disc rates should still be bounded between 0 and 1
+            self.assertTrue(np.all(np.array(disc_rates) >= 0))
+            self.assertTrue(np.all(np.array(disc_rates) <= 1))
 
     def test_edge_cases(self):
         """
@@ -98,17 +97,17 @@ class TestBootstrapForwardCurve(unittest.TestCase):
             [(10, 0.01)]  # Long maturity period (10 years)
         ]
         for cmt_data in edge_cases:
-            spot_rate_dates, spot_rates = bootstrap_forward_curve(
+            disc_rate_dates, disc_rates = bootstrap_forward_curve(
                 cmt_data, self.market_close_date, self.par_value
             )
 
-            # Check the length of spot rate dates and rates
-            self.assertEqual(len(spot_rate_dates), len(cmt_data) + 1)
-            self.assertEqual(len(spot_rates), len(cmt_data))
+            # Check the length of disc rate dates and rates
+            self.assertEqual(len(disc_rate_dates), len(cmt_data) + 1)
+            self.assertEqual(len(disc_rates), len(cmt_data))
 
-            # Spot rates should be bounded between 0 and 1
-            self.assertTrue(np.all(np.array(spot_rates) >= 0))
-            self.assertTrue(np.all(np.array(spot_rates) <= 1))
+            # Disc rates should be bounded between 0 and 1
+            self.assertTrue(np.all(np.array(disc_rates) >= 0))
+            self.assertTrue(np.all(np.array(disc_rates) <= 1))
 
     def test_input_types(self):
         """
@@ -121,16 +120,16 @@ class TestBootstrapForwardCurve(unittest.TestCase):
         market_close_datetime64 = np.datetime64('2024-08-10', 'D')
 
         # Call the function with both date formats
-        spot_dates_datetime, spot_rates_datetime = bootstrap_forward_curve(
+        disc_dates_datetime, disc_rates_datetime = bootstrap_forward_curve(
             self.cmt_data, market_close_datetime, self.par_value
         )
-        spot_dates_datetime64, spot_rates_datetime64 = bootstrap_forward_curve(
+        disc_dates_datetime64, disc_rates_datetime64 = bootstrap_forward_curve(
             self.cmt_data, market_close_datetime64, self.par_value
         )
 
         # Ensure outputs are almost equal
-        np.testing.assert_array_equal(spot_dates_datetime, spot_dates_datetime64)
-        np.testing.assert_array_almost_equal(spot_rates_datetime, spot_rates_datetime64)
+        np.testing.assert_array_equal(disc_dates_datetime, disc_dates_datetime64)
+        np.testing.assert_array_almost_equal(disc_rates_datetime, disc_rates_datetime64)
 
     def test_consistency(self):
         """
@@ -140,62 +139,97 @@ class TestBootstrapForwardCurve(unittest.TestCase):
         across repeated runs with the same input.
         """
         for _ in range(10):
-            spot_rate_dates1, spot_rates1 = bootstrap_forward_curve(
+            disc_rate_dates1, disc_rates1 = bootstrap_forward_curve(
                 self.cmt_data, self.market_close_date, self.par_value
             )
-            spot_rate_dates2, spot_rates2 = bootstrap_forward_curve(
+            disc_rate_dates2, disc_rates2 = bootstrap_forward_curve(
                 self.cmt_data, self.market_close_date, self.par_value
             )
 
-            # Ensure the spot rate dates are exactly the same across runs
-            np.testing.assert_array_equal(spot_rate_dates1, spot_rate_dates2)
-            # Ensure the spot rates are nearly equal across runs (accounting for floating point precision)
-            np.testing.assert_array_almost_equal(spot_rates1, spot_rates2)
+            # Ensure the disc rate dates are exactly the same across runs
+            np.testing.assert_array_equal(disc_rate_dates1, disc_rate_dates2)
+            # Ensure the disc rates are nearly equal across runs (accounting for floating point precision)
+            np.testing.assert_array_almost_equal(disc_rates1, disc_rates2)
+
 
 class TestBootstrapFinerForwardCurve(unittest.TestCase):
+    """
+    Unit test class for testing the `bootstrap_finer_forward_curve` function.
+
+    The tests include:
+    - Basic functionality with different frequencies (monthly, weekly).
+    - Handling of invalid frequency input.
+    - Consistency with different market close date formats.
+    """
 
     def setUp(self):
+        """
+        Set up common data used across multiple tests.
+        
+        This includes a set of bond data (`cmt_data`), a market close date, 
+        and a par value for the bonds.
+        """
         # Example bond data
         self.cmt_data = [(1, 0.03), (2, 0.04), (3, 0.05)]
+        # Market close date in datetime format
         self.market_close_date = datetime(2024, 8, 10)
-        self.par_value = 1000
+        # Par value for the bonds
+        self.par_value = 100
 
     def test_monthly_frequency(self):
-        # Test for monthly frequency
-        spot_rate_dates, spot_rates = bootstrap_finer_forward_curve(
+        """
+        Test the function with monthly frequency.
+        
+        This verifies that the number of dates and rates returned is correct,
+        and that the disc rates are within the expected range.
+        """
+        disc_rate_dates, disc_rates = bootstrap_finer_forward_curve(
             self.cmt_data, self.market_close_date, self.par_value, frequency='monthly'
         )
         
-        self.assertEqual(len(spot_rate_dates), 37)  # Expecting 3 years of monthly rates
-        self.assertEqual(len(spot_rates), 36)
-        self.assertGreaterEqual(min(spot_rates), 0)  # Rates should be non-negative
-        self.assertLessEqual(max(spot_rates), 1)     # Rates should not exceed 1
+        self.assertEqual(len(disc_rate_dates), 37)  # Expecting 3 years of monthly rates
+        self.assertEqual(len(disc_rates), 37)
+        self.assertGreaterEqual(min(disc_rates), 0)  # Rates should be non-negative
+        self.assertLessEqual(max(disc_rates), 1)     # Rates should not exceed 1
 
     def test_weekly_frequency(self):
-        # Test for weekly frequency
-        spot_rate_dates, spot_rates = bootstrap_finer_forward_curve(
+        """
+        Test the function with weekly frequency.
+        
+        This verifies that the number of dates and rates returned is correct,
+        and that the disc rates are within the expected range.
+        """
+        disc_rate_dates, disc_rates = bootstrap_finer_forward_curve(
             self.cmt_data, self.market_close_date, self.par_value, frequency='weekly'
         )
         
-        self.assertEqual(len(spot_rate_dates), 157)  # Expecting 3 years of weekly rates (52*3) + 1 (start date)
-        self.assertEqual(len(spot_rates), 156)
-        self.assertGreaterEqual(min(spot_rates), 0)
-        self.assertLessEqual(max(spot_rates), 1)
+        self.assertEqual(len(disc_rate_dates), 157)  # Expecting 3 years of weekly rates (52*3) + 1 (start date)
+        self.assertEqual(len(disc_rates), 157)
+        self.assertGreaterEqual(min(disc_rates), 0)
+        self.assertLessEqual(max(disc_rates), 1)
 
     def test_invalid_frequency(self):
-        # Test for invalid frequency input
+        """
+        Test the function with an invalid frequency input.
+        
+        This ensures that the function raises a ValueError for unsupported frequencies.
+        """
         with self.assertRaises(ValueError):
             bootstrap_finer_forward_curve(self.cmt_data, self.market_close_date, self.par_value, frequency='daily')
 
     def test_datetime64_market_close_date(self):
-        # Test with numpy datetime64 input for market_close_date
+        """
+        Test the function with numpy datetime64 input for market_close_date.
+        
+        This ensures that the function handles numpy datetime64 dates correctly.
+        """
         market_close_date_np = np.datetime64('2024-08-10')
-        spot_rate_dates, spot_rates = bootstrap_finer_forward_curve(
+        disc_rate_dates, disc_rates = bootstrap_finer_forward_curve(
             self.cmt_data, market_close_date_np, self.par_value, frequency='monthly'
         )
         
-        self.assertEqual(len(spot_rate_dates), 37)
-        self.assertEqual(len(spot_rates), 36)
+        self.assertEqual(len(disc_rate_dates), 37)
+        self.assertEqual(len(disc_rates), 37)
 
 if __name__ == '__main__':
     unittest.main()
