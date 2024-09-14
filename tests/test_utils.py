@@ -197,7 +197,7 @@ class TestCreateFineDatesGrid(unittest.TestCase):
         This test verifies that the function generates the correct number of dates
         when creating a weekly grid for approximately 3 months.
         """
-        market_close_date = datetime(2024, 1, 1)
+        market_close_date = datetime(2024, 1, 8)
         maturity_years = 1
         result = create_fine_dates_grid(market_close_date, maturity_years, 'weekly')
 

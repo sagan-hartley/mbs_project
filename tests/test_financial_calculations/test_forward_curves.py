@@ -23,7 +23,7 @@ class TestBootstrapForwardCurve(unittest.TestCase):
         Set up common data used across multiple tests.
         
         This includes a set of bond data (`cmt_data`), a market close date, 
-        and a par value for the bonds.
+        and a balance for the bonds.
         """
         # Test data for bond maturities and coupon rates
         self.cmt_data = [
@@ -33,8 +33,8 @@ class TestBootstrapForwardCurve(unittest.TestCase):
         ]
         # Market close date in datetime format
         self.market_close_date = datetime(2024, 8, 10)
-        # Par value for the bonds
-        self.par_value = 100
+        # balance for the bonds
+        self.balance = 100
 
     def test_basic_bootstrap(self):
         """
@@ -45,7 +45,7 @@ class TestBootstrapForwardCurve(unittest.TestCase):
         - That disc rates are bounded within the range [0, 1].
         """
         disc_rate_dates, disc_rates = bootstrap_forward_curve(
-            self.cmt_data, self.market_close_date, self.par_value
+            self.cmt_data, self.market_close_date, self.balance
         )
 
         # Check that the number of disc rate dates equals the number of maturities + 1 (for the market close date)
@@ -72,7 +72,7 @@ class TestBootstrapForwardCurve(unittest.TestCase):
         initial_guesses = [0.01, 0.05, 0.0, 1.0]
         for guess in initial_guesses:
             disc_rate_dates, disc_rates = bootstrap_forward_curve(
-                self.cmt_data, self.market_close_date, self.par_value, initial_guess=guess
+                self.cmt_data, self.market_close_date, self.balance, initial_guess=guess
             )
 
             # Check the length of disc rate dates and rates
@@ -98,7 +98,7 @@ class TestBootstrapForwardCurve(unittest.TestCase):
         ]
         for cmt_data in edge_cases:
             disc_rate_dates, disc_rates = bootstrap_forward_curve(
-                cmt_data, self.market_close_date, self.par_value
+                cmt_data, self.market_close_date, self.balance
             )
 
             # Check the length of disc rate dates and rates
@@ -121,10 +121,10 @@ class TestBootstrapForwardCurve(unittest.TestCase):
 
         # Call the function with both date formats
         disc_dates_datetime, disc_rates_datetime = bootstrap_forward_curve(
-            self.cmt_data, market_close_datetime, self.par_value
+            self.cmt_data, market_close_datetime, self.balance
         )
         disc_dates_datetime64, disc_rates_datetime64 = bootstrap_forward_curve(
-            self.cmt_data, market_close_datetime64, self.par_value
+            self.cmt_data, market_close_datetime64, self.balance
         )
 
         # Ensure outputs are almost equal
@@ -140,10 +140,10 @@ class TestBootstrapForwardCurve(unittest.TestCase):
         """
         for _ in range(10):
             disc_rate_dates1, disc_rates1 = bootstrap_forward_curve(
-                self.cmt_data, self.market_close_date, self.par_value
+                self.cmt_data, self.market_close_date, self.balance
             )
             disc_rate_dates2, disc_rates2 = bootstrap_forward_curve(
-                self.cmt_data, self.market_close_date, self.par_value
+                self.cmt_data, self.market_close_date, self.balance
             )
 
             # Ensure the disc rate dates are exactly the same across runs
@@ -167,14 +167,14 @@ class TestBootstrapFinerForwardCurve(unittest.TestCase):
         Set up common data used across multiple tests.
         
         This includes a set of bond data (`cmt_data`), a market close date, 
-        and a par value for the bonds.
+        and a balance for the bonds.
         """
         # Example bond data
         self.cmt_data = [(1, 0.03), (2, 0.04), (3, 0.05)]
         # Market close date in datetime format
         self.market_close_date = datetime(2024, 8, 10)
-        # Par value for the bonds
-        self.par_value = 100
+        # balance for the bonds
+        self.balance = 100
 
     def test_monthly_frequency(self):
         """
@@ -184,7 +184,7 @@ class TestBootstrapFinerForwardCurve(unittest.TestCase):
         and that the disc rates are within the expected range.
         """
         disc_rate_dates, disc_rates = bootstrap_finer_forward_curve(
-            self.cmt_data, self.market_close_date, self.par_value, frequency='monthly'
+            self.cmt_data, self.market_close_date, self.balance, frequency='monthly'
         )
         
         # We will test that the actual values of the forward curve rates are correct in tests/test_financial_calculations/test_coupon_rates.py
@@ -202,7 +202,7 @@ class TestBootstrapFinerForwardCurve(unittest.TestCase):
         and that the disc rates are within the expected range.
         """
         disc_rate_dates, disc_rates = bootstrap_finer_forward_curve(
-            self.cmt_data, self.market_close_date, self.par_value, frequency='weekly'
+            self.cmt_data, self.market_close_date, self.balance, frequency='weekly'
         )
         
         self.assertEqual(len(disc_rate_dates), 157)  # Expecting 3 years of weekly rates (52*3) + 1 (start date)
@@ -217,7 +217,7 @@ class TestBootstrapFinerForwardCurve(unittest.TestCase):
         This ensures that the function raises a ValueError for unsupported frequencies.
         """
         with self.assertRaises(ValueError):
-            bootstrap_finer_forward_curve(self.cmt_data, self.market_close_date, self.par_value, frequency='daily')
+            bootstrap_finer_forward_curve(self.cmt_data, self.market_close_date, self.balance, frequency='daily')
 
     def test_datetime64_market_close_date(self):
         """
@@ -227,7 +227,7 @@ class TestBootstrapFinerForwardCurve(unittest.TestCase):
         """
         market_close_date_np = np.datetime64('2024-08-10')
         disc_rate_dates, disc_rates = bootstrap_finer_forward_curve(
-            self.cmt_data, market_close_date_np, self.par_value, frequency='monthly'
+            self.cmt_data, market_close_date_np, self.balance, frequency='monthly'
         )
         
         self.assertEqual(len(disc_rate_dates), 37)
