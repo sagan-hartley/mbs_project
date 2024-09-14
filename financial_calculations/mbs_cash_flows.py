@@ -62,9 +62,8 @@ def calculate_scheduled_balances(principal, num_months, annual_interest_rate, mo
 
     for month in range(1, num_months + 1):
         interest_paid[month] = balances[month - 1] * annual_interest_rate / 12
-        principal_paydowns[month] = min(monthly_payment - interest_paid[month], balances[month - 1])
-        balances[month] = balances[month - 1] * (1 + annual_interest_rate / 12) - principal_paydowns[month]
-
+        principal_paydowns[month] = monthly_payment - interest_paid[month]
+        balances[month] = balances[month - 1] - principal_paydowns[month]
 
     return months, balances, principal_paydowns, interest_paid
 
@@ -94,8 +93,8 @@ def calculate_scheduled_balances_with_service_fee(principal, num_months, annual_
         interest_paid[month] = balances[month - 1] * annual_interest_rate / 12
         servicing_fee = balances[month - 1] * service_fee_rate / 12
         net_interest_paid[month] = interest_paid[month] - servicing_fee
-        principal_paydowns[month] = min(monthly_payment - net_interest_paid[month], balances[month - 1])
-        balances[month] = balances[month - 1] * (1 + annual_interest_rate / 12) - principal_paydowns[month]
+        principal_paydowns[month] = monthly_payment - net_interest_paid[month]
+        balances[month] = balances[month - 1] - principal_paydowns[month]
 
     return months, balances, principal_paydowns, interest_paid, net_interest_paid
 
@@ -122,15 +121,14 @@ def calculate_balances_with_prepayment(principal, num_months, gross_annual_inter
     net_interest_paid = np.zeros(num_months + 1)
 
     monthly_gross_interest_rate = gross_annual_interest_rate / 12
-    monthly_payment = (principal * monthly_gross_interest_rate * (1 + monthly_gross_interest_rate) ** num_months) / \
-                      ((1 + monthly_gross_interest_rate) ** num_months - 1)
+    monthly_payment = calculate_monthly_payment(principal, num_months, gross_annual_interest_rate)
 
-    scheduled_balances[0] = principal
+    scheduled_balances[0] = actual_balances[0] = principal
     pool_factors[0] = 1
 
     for month in range(1, num_months + 1):
         interest_paid[month] = scheduled_balances[month - 1] * monthly_gross_interest_rate
-        principal_paydowns[month] = min(monthly_payment - interest_paid[month], scheduled_balances[month - 1])
+        principal_paydowns[month] = monthly_payment - interest_paid[month]
         scheduled_balances[month] = scheduled_balances[month - 1] - principal_paydowns[month]
 
         if month < num_months:
@@ -139,14 +137,14 @@ def calculate_balances_with_prepayment(principal, num_months, gross_annual_inter
             pool_factors[month] = 0
 
         actual_balances[month] = scheduled_balances[month] * pool_factors[month]
-
-        if month > 0:
-            servicing_fee = actual_balances[month - 1] * (gross_annual_interest_rate - net_annual_interest_rate) / 12
-        else:
-            servicing_fee = 0
-
+        servicing_fee = actual_balances[month - 1] * (gross_annual_interest_rate - net_annual_interest_rate) / 12
         net_interest_paid[month] = interest_paid[month] - servicing_fee
 
+        if actual_balances[month] <= 1e-7:
+            actual_balances[month] = 0
+            break
+
+    print(actual_balances)
     return months, scheduled_balances, actual_balances, principal_paydowns, interest_paid, net_interest_paid
 
 

@@ -33,30 +33,41 @@ class TestCalculateMonthlyPayment(unittest.TestCase):
 
 class TestCalculateScheduledBalances(unittest.TestCase):
     def test_basic(self):
-        months, balances, principal_paydowns, interest_paid = calculate_scheduled_balances(1000, 12, 0.05, 85.61)
-        expected_balances = [1000.0, 917.37, 833.53, 748.44, 662.11, 574.51, 485.63, 395.45, 303.94, 210.09, 113.88, 14.29]
-        np.testing.assert_almost_equal(balances, expected_balances, decimal=2)
+        months, scheduled_balances, principal_paydowns, interest_paid = calculate_scheduled_balances(5000, 24, 0.0525, 219.917)
+        some_expected_balances = [5000.0, 4801.96, 4603.05, 4403.27, 4202.62]
+        np.testing.assert_array_almost_equal(scheduled_balances[0:5], some_expected_balances, decimal=2)
+        np.testing.assert_almost_equal(0, scheduled_balances[-1], decimal=2)
 
 class TestCalculateScheduledBalancesWithServiceFee(unittest.TestCase):
     def test_basic(self):
-        months, balances, principal_paydowns, interest_paid, net_interest_paid = calculate_scheduled_balances_with_service_fee(1000, 12, 0.05, 85.61, 0.01)
-        expected_net_interest_paid = [4.17, 3.34, 2.50, 1.67, 0.83, 0.00, -0.83, -1.67, -2.50, -3.34, -4.17, -5.00]
-        np.testing.assert_almost_equal(net_interest_paid[1:], expected_net_interest_paid[1:], decimal=2)
+        months, balances, principal_paydowns, interest_paid, net_interest_paid = calculate_scheduled_balances_with_service_fee(5000, 24, 0.0525, 219.917, 0.01)
+        some_expected_net_interest_paid = [0, 17.71, 16.99, 16.27, 15.55]
+        np.testing.assert_almost_equal(net_interest_paid[0:5], some_expected_net_interest_paid, decimal=2)
 
 class TestCalculateBalancesWithPrepayment(unittest.TestCase):
     def test_basic(self):
-        smms = np.zeros(12)
-        months, scheduled_balances, actual_balances, principal_paydowns, interest_paid, net_interest_paid = calculate_balances_with_prepayment(1000, 12, 0.05, 0.04, smms)
-        np.testing.assert_almost_equal(scheduled_balances[1:], [926.36, 852.84, 778.49, 703.31, 627.27, 550.34, 472.50, 393.73, 314.01, 233.31, 150.60, 65.86], decimal=2)
+        t_less_60 = np.arange(0, 60)
+        smm_less_60 = (t_less_60 / 60) * 0.01
+        t_greater_equal_60 = np.arange(60, 181)
+        smm_greater_equal_60 = 0.015 - (t_greater_equal_60 / 120) * 0.01
+        smms = np.concatenate([smm_less_60, smm_greater_equal_60])
+        months, scheduled_balances, actual_balances, principal_paydowns, interest_paid, net_interest_paid = calculate_balances_with_prepayment(100, 180, 0.07, 0.0675, smms)
+        np.testing.assert_almost_equal(actual_balances[0:3], [100, 99.68, 99.35], decimal=2)
+        np.testing.assert_almost_equal(actual_balances[59:62], [58.48, 57.58, 56.67], decimal=2)
+        np.testing.assert_almost_equal(actual_balances[178:181], [0.72, 0.36, 0], decimal=2)
 
 class TestCalculateBalancesWithPrepaymentAndDates(unittest.TestCase):
     def test_basic(self):
-        smms = np.zeros(12)
-        origination_date = datetime(2024, 1, 1)
-        months, dates, payment_dates, scheduled_balances, actual_balances, principal_paydowns, interest_paid, net_interest_paid = calculate_balances_with_prepayment_and_dates(1000, 12, 0.05, 0.04, smms, origination_date)
-        self.assertEqual(dates[0], origination_date)
-        self.assertEqual(payment_dates[0], origination_date + timedelta(days=24))
-        np.testing.assert_almost_equal(scheduled_balances[1:], [926.36, 852.84, 778.49, 703.31, 627.27, 550.34, 472.50, 393.73, 314.01, 233.31, 150.60, 65.86], decimal=2)
+        t_less_60 = np.arange(0, 60)
+        smm_less_60 = (t_less_60 / 60) * 0.01
+        t_greater_equal_60 = np.arange(60, 181)
+        smm_greater_equal_60 = 0.015 - (t_greater_equal_60 / 120) * 0.01
+        smms = np.concatenate([smm_less_60, smm_greater_equal_60])
+        months, dates, payment_dates, scheduled_balances, actual_balances, principal_paydowns, interest_paid, net_interest_paid = calculate_balances_with_prepayment_and_dates(100, 180, 0.07, 0.0675, smms, datetime(2024, 1, 1), payment_delay_days=25)
+        expected_dates = [datetime(2024, 1, 1) + relativedelta(months=i) for i in range(181)]
+        expected_payment_dates = [datetime(2024, 1, 26) + relativedelta(months=i) for i in range(181)]
+        np.testing.assert_array_equal(dates, expected_dates)
+        np.testing.assert_array_equal(payment_dates, expected_payment_dates)
 
 class TestCalculateWeightedAverageLife(unittest.TestCase):
     def test_basic(self):
