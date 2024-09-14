@@ -1,10 +1,12 @@
 import unittest
 from datetime import datetime
+from dateutil.relativedelta import relativedelta
 import numpy as np
 import pytest
 from utils import ( 
     get_ZCB_vector,
-    discount_cash_flows
+    discount_cash_flows,
+    create_fine_dates_grid
 )
 
 class TestGetZCBVector(unittest.TestCase):
@@ -165,6 +167,57 @@ class TestDiscountCashFlows(unittest.TestCase):
                 self.discount_rate_vals,
                 self.discount_rate_dates
             )
+
+class TestCreateFineDatesGrid(unittest.TestCase):
+    """
+    Unit tests for the create_fine_dates_grid function.
+    """
+
+    def test_monthly_intervals(self):
+        """
+        Test the creation of a date grid with monthly intervals.
+
+        This test verifies that the function generates the correct number of dates
+        when creating a monthly grid from the market close date to one year later.
+        """
+        market_close_date = datetime(2024, 1, 1)
+        maturity_years = 1
+        result = create_fine_dates_grid(market_close_date, maturity_years, 'monthly')
+
+        # Expected 13 dates: from Jan 1, 2024 through Jan 1, 2025 (inclusive)
+        expected_dates = [market_close_date + relativedelta(months=i) for i in range(13)]
+        expected = np.array(expected_dates)
+
+        np.testing.assert_array_equal(result, expected)
+
+    def test_weekly_intervals(self):
+        """
+        Test the creation of a date grid with weekly intervals.
+
+        This test verifies that the function generates the correct number of dates
+        when creating a weekly grid for approximately 3 months.
+        """
+        market_close_date = datetime(2024, 1, 8)
+        maturity_years = 1
+        result = create_fine_dates_grid(market_close_date, maturity_years, 'weekly')
+
+        # Expected dates starting from Jan 1, 2024, with weekly intervals
+        expected_dates = [market_close_date + relativedelta(weeks=i) for i in range(53)]  # Approx 53 weeks
+        expected = np.array(expected_dates)
+
+        np.testing.assert_array_equal(result, expected)
+
+    def test_invalid_interval_type(self):
+        """
+        Test the function with an invalid interval type.
+
+        This test verifies that the function raises a ValueError when provided with
+        an invalid interval type.
+        """
+        market_close_date = datetime(2024, 1, 1)
+        maturity_years = 1
+        with self.assertRaises(ValueError):
+            create_fine_dates_grid(market_close_date, maturity_years, 'daily')  # Invalid interval type
 
 if __name__ == '__main__':
     unittest.main()

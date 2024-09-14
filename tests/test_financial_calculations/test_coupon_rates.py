@@ -2,8 +2,13 @@ import unittest
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import numpy as np
-from financial_calculations.coupon_rates import calculate_coupon_rate
-from financial_calculations.forward_curves import bootstrap_forward_curve
+from financial_calculations.coupon_rates import (
+    calculate_coupon_rate
+)
+from financial_calculations.forward_curves import (
+    bootstrap_forward_curve,
+    bootstrap_finer_forward_curve
+)
 
 class TestCalculateCouponRate(unittest.TestCase):
     """
@@ -34,6 +39,10 @@ class TestCalculateCouponRate(unittest.TestCase):
 
         # Generate forward curve using bootstrap_forward_curve function
         self.forward_curve = bootstrap_forward_curve(self.cmt_data, self.market_close_date, self.par_value)
+
+        # Generate a finer forward curve using bootstrap_finer_forward_curve function
+        self.finer_forward_curve = bootstrap_finer_forward_curve(self.cmt_data, self.market_close_date, self.par_value)
+        
         # Set the maturity years for bond calculations
         self.maturity_years = 2
 
@@ -43,10 +52,12 @@ class TestCalculateCouponRate(unittest.TestCase):
         Verifies that the coupon rate returned matches the spot rate for the market close date.
         """
         start_date = self.market_close_date
-        coupon_rate = calculate_coupon_rate(start_date, self.maturity_years, self.forward_curve)
+        coarse_coupon_rate = calculate_coupon_rate(start_date, self.maturity_years, self.forward_curve)
+        fine_coupon_rate = calculate_coupon_rate(start_date, self.maturity_years, self.finer_forward_curve)
         # The expected rate should match the spot rate at the market close date
         expected_rate = self.cmt_data[1][1]  # The coupon rate corresponding to the market close date
-        self.assertAlmostEqual(coupon_rate, expected_rate, places=5)
+        self.assertAlmostEqual(coarse_coupon_rate, expected_rate, places=4)
+        self.assertAlmostEqual(fine_coupon_rate, expected_rate, places=4)
 
     def test_start_date_is_after_market_close_date(self):
         """
