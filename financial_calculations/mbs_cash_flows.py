@@ -110,7 +110,6 @@ def calculate_balances_with_prepayment(principal, num_months, gross_annual_inter
     months = np.arange(num_months + 1)
     
     # Calculate scheduled balances, principal paydowns, and interest paid
-    monthly_gross_interest_rate = gross_annual_interest_rate / 12
     monthly_payment = calculate_monthly_payment(principal, num_months, gross_annual_interest_rate)
     _, scheduled_balances, principal_paydowns, interest_paid = calculate_scheduled_balances(
         principal, num_months, gross_annual_interest_rate, monthly_payment
