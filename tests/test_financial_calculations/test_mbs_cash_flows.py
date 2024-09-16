@@ -98,10 +98,10 @@ class TestCalculateDirtyPrice(unittest.TestCase):
 
 class TestCalculateCleanPrice(unittest.TestCase):
     def test_basic(self):
-        dirty_price = 105.26
-        settle_date = datetime(2024, 1, 1)
-        last_coupon_date = datetime(2023, 12, 1)
+        dirty_price = 1020
+        settle_date = datetime(2024, 9, 15)
+        last_coupon_date = datetime(2024, 8, 15)
         annual_interest_rate = 0.05
-        balance_at_settle = 950
+        balance_at_settle = 1000
         clean_price = calculate_clean_price(dirty_price, settle_date, last_coupon_date, annual_interest_rate, balance_at_settle)
-        self.assertAlmostEqual(clean_price, 101.17, places=2)
+        self.assertAlmostEqual(clean_price, 1015.756, places=2)
