@@ -120,12 +120,10 @@ def calculate_balances_with_prepayment(principal, num_months, gross_annual_inter
     actual_balances = np.zeros(num_months + 1)
     net_interest_paid = np.zeros(num_months + 1)
 
-    # Calculate pool factors based on SMMS
-    for month in range(1, num_months + 1):
-        if month < num_months:
-            pool_factors[month] = pool_factors[month - 1] * (1 - smms[month - 1])
-        else:
-            pool_factors[month] = 0
+    # Vectorized calculation of pool factors based on SMMS
+    pool_factors = np.ones(num_months + 1)
+    pool_factors[1:] = np.cumprod(1 - smms)
+    pool_factors[-1] = 0
 
     # Calculate actual balances and net interest paid
     actual_balances = scheduled_balances * pool_factors

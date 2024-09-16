@@ -48,7 +48,7 @@ class TestCalculateBalancesWithPrepayment(unittest.TestCase):
     def test_basic(self):
         t_less_60 = np.arange(0, 60)
         smm_less_60 = (t_less_60 / 60) * 0.01
-        t_greater_equal_60 = np.arange(60, 181)
+        t_greater_equal_60 = np.arange(60, 180)
         smm_greater_equal_60 = 0.015 - (t_greater_equal_60 / 120) * 0.01
         smms = np.concatenate([smm_less_60, smm_greater_equal_60])
         months, scheduled_balances, actual_balances, principal_paydowns, interest_paid, net_interest_paid = calculate_balances_with_prepayment(100, 180, 0.07, 0.0675, smms)
@@ -60,7 +60,7 @@ class TestCalculateBalancesWithPrepaymentAndDates(unittest.TestCase):
     def test_basic(self):
         t_less_60 = np.arange(0, 60)
         smm_less_60 = (t_less_60 / 60) * 0.01
-        t_greater_equal_60 = np.arange(60, 181)
+        t_greater_equal_60 = np.arange(60, 180)
         smm_greater_equal_60 = 0.015 - (t_greater_equal_60 / 120) * 0.01
         smms = np.concatenate([smm_less_60, smm_greater_equal_60])
         months, dates, payment_dates, scheduled_balances, actual_balances, principal_paydowns, interest_paid, net_interest_paid = calculate_balances_with_prepayment_and_dates(100, 180, 0.07, 0.0675, smms, datetime(2024, 1, 1), payment_delay_days=25)
