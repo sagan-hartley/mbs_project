@@ -140,9 +140,10 @@ def bootstrap_finer_forward_curve(cmt_data, market_close_date, balance, frequenc
 
     # Minimize the objective function using L-BFGS-B method
     # x0 is the initial guess for the disc rate, bounds ensure rates remain between 0 and 1
-    result = minimize(objective, x0=np.ones(len(disc_rate_dates))*initial_guess, 
+    rates_length = len(disc_rate_dates)
+    result = minimize(objective, x0=np.ones(rates_length)*initial_guess, 
                           method='L-BFGS-B', bounds=[(0, 1)], 
-                          options={'ftol': balance * 1e-7})
+                          options={'ftol': balance * rates_length * 1e-7})
 
     # If the optimization converges, append the found rate to the disc rates array
     if result.success:

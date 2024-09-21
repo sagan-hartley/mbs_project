@@ -1,0 +1,3 @@
+Security ID,Principal,Gross Interest Rate,Net Interest Rate,Term (Months),SMMS,Origination Date,Payment Delay Days,Service Fee Rate
+MBS_001,1000000,0.05,0.045,360,"0.01,0.01,0.01,...",2024-01-01,24,0.0015
+MBS_002,500000,0.048,0.043,360,"0.02,0.015,0.01,...",2024-02-01,24,0.0015
