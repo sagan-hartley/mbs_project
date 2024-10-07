@@ -62,8 +62,8 @@ def calculate_scheduled_balances(principal, num_months, annual_interest_rate, mo
 
     # Iterate over each month to calculate balances, principal paydowns, and interest paid
     for month in range(1, num_months + 1):
-        interest_paid[month] = balances[month - 1] * annual_interest_rate / 12
-        principal_paydowns[month] = monthly_payment - interest_paid[month]
+        interest_paid[month-1] = balances[month - 1] * annual_interest_rate / 12
+        principal_paydowns[month] = monthly_payment - interest_paid[month-1]
         balances[month] = balances[month - 1] - principal_paydowns[month]
 
     return months, balances, principal_paydowns, interest_paid
@@ -89,7 +89,8 @@ def calculate_scheduled_balances_with_service_fee(principal, num_months, annual_
     )
 
     # Calculate net interest paid (interest paid minus servicing fee)
-    net_interest_paid = interest_paid - np.concatenate(([0], np.full(len(interest_paid) - 1, service_fee_rate)))
+    net_interest_paid = interest_paid - service_fee_rate
+    net_interest_paid[-1] = 0
 
     return months, balances, principal_paydowns, interest_paid, net_interest_paid
 
@@ -107,11 +108,10 @@ def calculate_balances_with_prepayment(principal, num_months, gross_annual_inter
     Returns:
     tuple: (months, scheduled_balances, actual_balances, principal_paydowns, interest_paid, net_interest_paid)
     """
-    months = np.arange(num_months + 1)
     
-    # Calculate scheduled balances, principal paydowns, and interest paid
+    # Calculate months, scheduled balances, scheduled principal paydowns, and gross interest paid
     monthly_payment = calculate_monthly_payment(principal, num_months, gross_annual_interest_rate)
-    _, scheduled_balances, principal_paydowns, interest_paid = calculate_scheduled_balances(
+    months, scheduled_balances, scheduled_principal_paydowns, gross_interest_paid = calculate_scheduled_balances(
         principal, num_months, gross_annual_interest_rate, monthly_payment
     )
 
@@ -125,12 +125,13 @@ def calculate_balances_with_prepayment(principal, num_months, gross_annual_inter
     pool_factors[1:] = np.cumprod(1 - smms)
     pool_factors[-1] = 0
 
-    # Calculate actual balances and net interest paid
+    # Calculate actual balances, actual principal paydowns, and net interest paid
     actual_balances = scheduled_balances * pool_factors
-    servicing_fees = actual_balances * (gross_annual_interest_rate - net_annual_interest_rate) / 12
-    net_interest_paid = interest_paid - servicing_fees
+    actual_principal_paydowns = np.insert(-np.diff(actual_balances), 0, 0)
+    net_interest_paid = actual_balances * net_annual_interest_rate / 12
+    net_interest_paid = net_interest_paid[-1] + net_interest_paid[1:]
 
-    return months, scheduled_balances, actual_balances, principal_paydowns, interest_paid, net_interest_paid
+    return months, scheduled_balances, actual_balances, actual_principal_paydowns, gross_interest_paid, net_interest_paid
 
 def calculate_balances_with_prepayment_and_dates(principal, num_months, gross_annual_interest_rate, net_annual_interest_rate, smms, origination_date, payment_delay_days=24):
     """
@@ -177,7 +178,7 @@ def calculate_weighted_average_life(df, reference_date, payment_date_name = 'Pay
     float: The Weighted Average Life.
     """
     # Calculate the number of years between each payment date and the reference date
-    df['Years'] = (df[payment_date_name] - reference_date).dt.days / 365.0
+    df['Years'] = (df[payment_date_name] - reference_date).dt.days / 365.25
     # Calculate the principal paydown for each period
     df['Principal Paydown'] = df[balance_name].shift(1, fill_value=0) - df[balance_name]
     df.loc[0, 'Principal Paydown'] = 0  # Set the first period's paydown to 0

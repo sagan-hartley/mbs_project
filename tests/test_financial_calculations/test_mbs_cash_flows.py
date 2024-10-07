@@ -32,7 +32,7 @@ class BaseTestCase(unittest.TestCase):
         smm_greater_equal_60 = 0.015 - (t_greater_equal_60 / 120) * 0.01
         self.smms = np.concatenate([smm_less_60, smm_greater_equal_60])
         self.market_close_date = datetime(2008, 1, 1)
-        self.payment_delay_days = 14
+        self.payment_delay_days = 24
 
         self.gross_rate_monthly_payment = calculate_monthly_payment(self.balance, self.num_months, self.gross_annual_interest_rate)
 
@@ -41,8 +41,6 @@ class BaseTestCase(unittest.TestCase):
         self.mbs = calculate_balances_with_prepayment_and_dates(self.balance, self.num_months, self.gross_annual_interest_rate, self.net_annual_interest_rate, self.smms, self.market_close_date, self.payment_delay_days)
 
         self.mbs_df = pd.DataFrame(list(zip(*self.mbs)), columns=['Month', 'Date', 'Payment Date', 'Scheduled Balance', 'Actual Balance', 'Principal Paydown', 'Interest Paid', 'Net Interest Paid'])
-
-        print(sum(self.mbs_df['Principal Paydown'] + self.mbs_df['Interest Paid']))
 
         self.discount_rates = np.array([
             0.006983617, 0.050476979, 0.051396376, 0.081552298, 0.045289981,
@@ -137,7 +135,7 @@ class TestCalculateScheduledBalancesWithServiceFee(BaseTestCase):
         months, balances, principal_paydowns, interest_paid, net_interest_paid = calculate_scheduled_balances_with_service_fee(
             self.balance, self.num_months, self.gross_annual_interest_rate, self.gross_rate_monthly_payment, self.service_fee_rate
         )
-        some_expected_net_interest_paid = [0.  , 0.56, 0.56, 0.56, 0.55]
+        some_expected_net_interest_paid = [0.56, 0.56, 0.56, 0.55, 0.55]
         np.testing.assert_almost_equal(net_interest_paid[0:5], some_expected_net_interest_paid, decimal=2)
 
 
@@ -171,7 +169,7 @@ class TestCalculateBalancesWithPrepaymentAndDates(BaseTestCase):
         np.testing.assert_almost_equal(actual_balances[59:62], [58.48, 57.58, 56.67], decimal=2)
         np.testing.assert_almost_equal(actual_balances[178:181], [0.72, 0.36, 0], decimal=2)
         expected_dates = [datetime(2008, 1, 1) + relativedelta(months=i) for i in range(181)]
-        expected_payment_dates = [datetime(2008, 1, 15) + relativedelta(months=i) for i in range(181)]
+        expected_payment_dates = [datetime(2008, 1, 25) + relativedelta(months=i) for i in range(181)]
         np.testing.assert_array_equal(dates, expected_dates)
         np.testing.assert_array_equal(payment_dates, expected_payment_dates)
 
@@ -195,7 +193,7 @@ class TestCalculatePresentValue(BaseTestCase):
     def test_basic(self):
         """Test present value calculation of a cash flow schedule."""
         present_value = calculate_present_value(self.mbs_df, self.market_close_date, self.discount_rates, self.discount_rate_dates)
-        self.assertAlmostEqual(present_value, 111.04476929266467)
+        self.assertAlmostEqual(present_value, 111.01502829546669)
 
 
 class TestCalculateDirtyPrice(unittest.TestCase):
