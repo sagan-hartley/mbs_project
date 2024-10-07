@@ -14,6 +14,7 @@ from financial_calculations.mbs_cash_flows import (
     calculate_dirty_price,
     calculate_clean_price
 )
+from utils import get_ZCB_vector
 
 class BaseTestCase(unittest.TestCase):
     """
@@ -83,7 +84,6 @@ class BaseTestCase(unittest.TestCase):
         ])
 
         self.discount_rate_dates = [datetime(2008, 1, 1) + relativedelta(months=i) for i in range(181)]
-
 
 class TestCalculateMonthlyPayment(unittest.TestCase):
     """

@@ -166,16 +166,19 @@ def calculate_balances_with_prepayment_and_dates(principal, num_months, gross_an
 
     return months, dates, payment_dates, scheduled_balances, actual_balances, principal_paydowns, interest_paid, net_interest_paid
 
-def calculate_weighted_average_life(df, reference_date, payment_date_name = 'Payment Date', balance_name = 'Scheduled Balance'):
+def calculate_weighted_average_life(df, reference_date, payment_date_name='Payment Date', balance_name='Scheduled Balance'):
     """
     Calculate the Weighted Average Life (WAL) of a loan or security.
 
     Parameters:
-    df (pd.DataFrame): DataFrame containing payment schedule with 'Payment Date' and 'Scheduled Balance'.
-    reference_date (datetime): Reference date for the WAL calculation.
+    df (pd.DataFrame): DataFrame containing the payment schedule, which includes at least the payment dates and scheduled balances.
+                       The column names for these can be specified using 'payment_date_name' and 'balance_name'.
+    reference_date (datetime): The date from which the years to each payment date are calculated (usually the settlement or issue date).
+    payment_date_name (str): Column name for the payment dates in the DataFrame. Defaults to 'Payment Date'.
+    balance_name (str): Column name for the outstanding balances in the DataFrame. Defaults to 'Scheduled Balance'.
 
     Returns:
-    float: The Weighted Average Life.
+    float: The Weighted Average Life, which represents the average time until principal is repaid, weighted by the amount of principal.
     """
     # Calculate the number of years between each payment date and the reference date
     df['Years'] = (df[payment_date_name] - reference_date).dt.days / 365.25
@@ -191,29 +194,31 @@ def calculate_weighted_average_life(df, reference_date, payment_date_name = 'Pay
     wal = wal_numerator / wal_denominator if wal_denominator != 0 else 0
     return wal
 
-def calculate_present_value(schedule, settle_date, rate_vals, rate_dates):
+
+def calculate_present_value(schedule, settle_date, rate_vals, rate_dates, principal_name='Principal Paydown', net_interest_name='Net Interest Paid', payment_date_name='Payment Date'):
     """
-    Calculate the present value of cash flows based on zero-coupon bond values.
+    Calculate the present value of cash flows by discounting them with corresponding zero-coupon bond rates.
 
     Parameters:
-    schedule (pd.DataFrame): DataFrame containing payment schedule with 'Payment Date' and 'Principal Paydown'.
-    settle_date (datetime): Settlement date.
-    rate_vals : list of float
-        A list of discount rates (in decimal form) corresponding to the rate_dates.
-        The rates are applied in a piecewise manner between the rate_dates.
-    rate_dates : list of datetime or datetime64[D]
-        A list of dates where the rates change. The first entry represents the market close date (i.e., the 
-        starting point for the discounting process). Rates apply between consecutive dates.
+    schedule (pd.DataFrame): DataFrame containing the payment schedule, including columns for payment dates, principal paydowns, and net interest paid.
+    settle_date (datetime): The settlement date used to filter cash flows occurring after this date.
+    rate_vals (list of float): List of discount rates (in decimal) that correspond to the rate_dates.
+                               These rates are applied piecewise between the rate_dates.
+    rate_dates (list of datetime or datetime64[D]): List of dates representing the start of periods where the rates change.
+                                                    Rates apply between consecutive dates.
+    principal_name (str): Column name for principal payments in the DataFrame. Defaults to 'Principal Paydown'.
+    net_interest_name (str): Column name for net interest payments in the DataFrame. Defaults to 'Net Interest Paid'.
+    payment_date_name (str): Column name for the payment dates in the DataFrame. Defaults to 'Payment Date'.
 
     Returns:
-    float: The present value of the cash flows.
+    float: The present value of the cash flows, calculated by discounting them back to the settlement date using the provided rates.
     """
-    # Filter out cash flows that are before the settlement date
-    filtered_schedule = schedule[schedule['Payment Date'] > settle_date]
-    payment_dates = filtered_schedule['Payment Date'].to_numpy()
-    cash_flows = (filtered_schedule['Principal Paydown'] + filtered_schedule['Net Interest Paid']).to_numpy()
+    # Filter out cash flows that occur before the settlement date
+    filtered_schedule = schedule[schedule[payment_date_name] > settle_date]
+    payment_dates = filtered_schedule[payment_date_name].to_numpy()
+    cash_flows = (filtered_schedule[principal_name] + filtered_schedule[net_interest_name]).to_numpy()
 
-    # Calculate the present value using discount cash flows function
+    # Calculate the present value using the discount_cash_flows function
     present_value = discount_cash_flows(payment_dates, cash_flows, rate_vals, rate_dates)
 
     return present_value
