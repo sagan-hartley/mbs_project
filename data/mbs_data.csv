@@ -1,3 +1,9 @@
-Security ID,Principal,Gross Interest Rate,Net Interest Rate,Term (Months),SMMS,Origination Date,Payment Delay Days,Service Fee Rate
-MBS_001,1000000,0.05,0.045,360,"0.01,0.01,0.01,...",2024-01-01,24,0.0015
-MBS_002,500000,0.048,0.043,360,"0.02,0.015,0.01,...",2024-02-01,24,0.0015
+Function String, MBS ID, Principal, Number of Months, Gross Annual Coupon, Net Annual Coupon, Origination Date, SMMs, Payment Delay
+calculate_scheduled_balances,MBS_001,1000,12,0.05,0.0475,01/01/2024, None, None
+calculate_scheduled_balances,MBS_002,100,36,0.03,0.0275,01/01/2025, None, None
+calculate_scheduled_balances_with_service_fee,MBS_003,1000,12,0.05,0.0475,07/01/2024, None, None
+calculate_scheduled_balances_with_service_fee,MBS_004,100,36,0.03,0.0275,03/15/2025, None, None
+calculate_balances_with_prepayment,MBS_005,10000,24,0.06,0.0575,03/20/2024,"[0.01, 0.01, 0.02, 0.01, 0.01, 0.02, 0.01, 0.01, 0.02, 0.01, 0.01, 0.02, 0.01, 0.01, 0.02, 0.01, 0.01, 0.02, 0.01, 0.01, 0.02, 0.01, 0.01, 0.02]", None
+calculate_balances_with_prepayment,MBS_006,7000,12,0.03,0.0275,02/01/2025,"[0.01, 0.01, 0.02, 0.01, 0.01, 0.02, 0.01, 0.01, 0.02, 0.01, 0.01, 0.02]", None
+calculate_balances_with_prepayment,MBS_007,10000,24,0.06,0.0575,03/20/2024,"[0.01, 0.01, 0.02, 0.01, 0.01, 0.02, 0.01, 0.01, 0.02, 0.01, 0.01, 0.02, 0.01, 0.01, 0.02, 0.01, 0.01, 0.02, 0.01, 0.01, 0.02, 0.01, 0.01, 0.02]", 15
+calculate_balances_with_prepayment,MBS_008,7000,12,0.03,0.0275,02/01/2025,"[0.01, 0.01, 0.02, 0.01, 0.01, 0.02, 0.01, 0.01, 0.02, 0.01, 0.01, 0.02]", 24

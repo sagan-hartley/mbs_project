@@ -165,7 +165,7 @@ def calculate_balances_with_prepayment_and_dates(principal, num_months, gross_an
 
     return months, dates, payment_dates, scheduled_balances, actual_balances, principal_paydowns, interest_paid, net_interest_paid
 
-def calculate_weighted_average_life(df, reference_date):
+def calculate_weighted_average_life(df, reference_date, payment_date_name = 'Payment Date', balance_name = 'Scheduled Balance'):
     """
     Calculate the Weighted Average Life (WAL) of a loan or security.
 
@@ -177,9 +177,9 @@ def calculate_weighted_average_life(df, reference_date):
     float: The Weighted Average Life.
     """
     # Calculate the number of years between each payment date and the reference date
-    df['Years'] = (df['Payment Date'] - reference_date).dt.days / 365.0
+    df['Years'] = (df[payment_date_name] - reference_date).dt.days / 365.0
     # Calculate the principal paydown for each period
-    df['Principal Paydown'] = df['Scheduled Balance'].shift(1, fill_value=0) - df['Scheduled Balance']
+    df['Principal Paydown'] = df[balance_name].shift(1, fill_value=0) - df[balance_name]
     df.loc[0, 'Principal Paydown'] = 0  # Set the first period's paydown to 0
 
     # Compute the numerator and denominator for WAL calculation
