@@ -210,7 +210,7 @@ def calculate_present_value(schedule, settle_date, rate_vals, rate_dates):
     # Filter out cash flows that are before the settlement date
     filtered_schedule = schedule[schedule['Payment Date'] > settle_date]
     payment_dates = filtered_schedule['Payment Date'].to_numpy()
-    cash_flows = filtered_schedule['Principal Paydown'].to_numpy()
+    cash_flows = (filtered_schedule['Principal Paydown'] + filtered_schedule['Net Interest Paid']).to_numpy()
 
     # Calculate the present value using discount cash flows function
     present_value = discount_cash_flows(payment_dates, cash_flows, rate_vals, rate_dates)
