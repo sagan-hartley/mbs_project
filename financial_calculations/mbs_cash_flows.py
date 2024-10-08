@@ -206,7 +206,6 @@ def calculate_weighted_average_life(df, reference_date, date_name='Accruel Date'
 
     # Filter out any records where the accruel date is before the reference date
     filtered_df = df[df[date_name] > reference_date]
-    print(filtered_df['Principal Paydown'])
 
     if filtered_df.empty:
         return 0  # No payments after the reference date
