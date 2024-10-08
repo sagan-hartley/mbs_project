@@ -164,3 +164,24 @@ def create_fine_dates_grid(market_close_date, maturity_years: int, interval_type
     
     # Convert the list to a numpy array
     return np.array(dates_grid)
+
+def days360(d1, d2):
+    """
+    Calculate the number of days between two dates using a 360-day year convention.
+
+    Parameters:
+    d1 (datetime): The first date.
+    d2 (datetime): The second date, which should be later than or equal to the first date.
+
+    Returns:
+    int: The number of days between the two dates, considering a 360-day year convention.
+    
+    Raises:
+    AssertionError: If the dates are not in the same month or year, or if the first date is not the first day of the month.
+    """
+    assert d1 <= d2, "The first date must be before or equal to the second date."
+    assert d1.day == 1, "The first date must be the first day of the month."
+    assert d1.month == d2.month, "The dates must be in the same month."
+    assert d1.year == d2.year, "The dates must be in the same year."
+
+    return d2.day - d1.day

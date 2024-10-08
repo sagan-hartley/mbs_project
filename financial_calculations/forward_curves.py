@@ -5,7 +5,7 @@ from dateutil.relativedelta import relativedelta
 from scipy.optimize import minimize
 from utils import (
     discount_cash_flows,
-    create_fine_dates_grid
+    create_fine_dates_grid,
 )
 from financial_calculations.bond_cash_flows import (
     create_semi_bond_cash_flows
@@ -74,9 +74,9 @@ def bootstrap_forward_curve(cmt_data, market_close_date, balance, initial_guess=
     
     return disc_rate_dates, disc_rates
 
-def bootstrap_finer_forward_curve(cmt_data, market_close_date, balance, frequency='monthly', initial_guess=0.04, smoothing_error_weight=100.0):
+def calibrate_finer_forward_curve(cmt_data, market_close_date, balance, frequency='monthly', initial_guess=0.04, smoothing_error_weight=100.0):
     """
-    Bootstraps a finer forward curve using a specified grid frequency (monthly/weekly).
+    Calibrates a finer forward curve using a specified grid frequency (monthly/weekly).
     This method penalizes large rate jumps to ensure smoother transitions between rates.
 
     Parameters:

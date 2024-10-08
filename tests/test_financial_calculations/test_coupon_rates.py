@@ -7,7 +7,7 @@ from financial_calculations.coupon_rates import (
 )
 from financial_calculations.forward_curves import (
     bootstrap_forward_curve,
-    bootstrap_finer_forward_curve
+    calibrate_finer_forward_curve
 )
 
 class TestCalculateCouponRate(unittest.TestCase):
@@ -40,8 +40,8 @@ class TestCalculateCouponRate(unittest.TestCase):
         # Generate forward curve using bootstrap_forward_curve function
         self.forward_curve = bootstrap_forward_curve(self.cmt_data, self.market_close_date, self.par_value)
 
-        # Generate a finer forward curve using bootstrap_finer_forward_curve function
-        self.finer_forward_curve = bootstrap_finer_forward_curve(self.cmt_data, self.market_close_date, self.par_value)
+        # Generate a finer forward curve using calibrate_finer_forward_curve function
+        self.finer_forward_curve = calibrate_finer_forward_curve(self.cmt_data, self.market_close_date, self.par_value)
         
         # Set the maturity years for bond calculations
         self.maturity_years = 2

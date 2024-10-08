@@ -6,7 +6,8 @@ import pytest
 from utils import ( 
     get_ZCB_vector,
     discount_cash_flows,
-    create_fine_dates_grid
+    create_fine_dates_grid,
+    days360
 )
 
 class TestGetZCBVector(unittest.TestCase):
@@ -218,6 +219,58 @@ class TestCreateFineDatesGrid(unittest.TestCase):
         maturity_years = 1
         with self.assertRaises(ValueError):
             create_fine_dates_grid(market_close_date, maturity_years, 'daily')  # Invalid interval type
+
+class TestDays360(unittest.TestCase):
+    
+    def test_valid_dates(self):
+        """Test a valid case where d1 is the first day of the month and d2 is later in the same month."""
+        d1 = datetime(2024, 10, 1)
+        d2 = datetime(2024, 10, 15)
+        self.assertEqual(days360(d1, d2), 14)
+    
+    def test_d1_equals_d2(self):
+        """Test case where d1 equals d2, should return 0 days."""
+        d1 = datetime(2024, 10, 1)
+        d2 = datetime(2024, 10, 1)
+        self.assertEqual(days360(d1, d2), 0)
+    
+    def test_d1_before_d2(self):
+        """Test valid case with different days in the same month."""
+        d1 = datetime(2024, 10, 1)
+        d2 = datetime(2024, 10, 10)
+        self.assertEqual(days360(d1, d2), 9)
+
+    def test_not_first_day_of_month(self):
+        """Test case where d1 is not the first day of the month, should raise AssertionError."""
+        d1 = datetime(2024, 10, 5)
+        d2 = datetime(2024, 10, 15)
+        with self.assertRaises(AssertionError) as context:
+            days360(d1, d2)
+        self.assertEqual(str(context.exception), "The first date must be the first day of the month.")
+
+    def test_different_months(self):
+        """Test case where d1 and d2 are in different months, should raise AssertionError."""
+        d1 = datetime(2024, 10, 1)
+        d2 = datetime(2024, 11, 1)
+        with self.assertRaises(AssertionError) as context:
+            days360(d1, d2)
+        self.assertEqual(str(context.exception), "The dates must be in the same month.")
+        
+    def test_different_years(self):
+        """Test case where d1 and d2 are in different years, should raise AssertionError."""
+        d1 = datetime(2023, 10, 1)
+        d2 = datetime(2024, 10, 1)
+        with self.assertRaises(AssertionError) as context:
+            days360(d1, d2)
+        self.assertEqual(str(context.exception), "The dates must be in the same year.")
+
+    def test_d1_after_d2(self):
+        """Test case where d1 is after d2, should raise AssertionError."""
+        d1 = datetime(2024, 10, 5)
+        d2 = datetime(2024, 10, 1)
+        with self.assertRaises(AssertionError) as context:
+            days360(d1, d2)
+        self.assertEqual(str(context.exception), "The first date must be before or equal to the second date.")
 
 if __name__ == '__main__':
     unittest.main()

@@ -6,7 +6,7 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from financial_calculations.forward_curves import (
     bootstrap_forward_curve, 
-    bootstrap_finer_forward_curve
+    calibrate_finer_forward_curve
 )
 from financial_calculations.mbs_cash_flows import (
     calculate_monthly_payment,
@@ -105,8 +105,8 @@ def plot_curves(coarse_curve, fine_curve):
         None
     """
     plt.figure(figsize=(10, 6))
-    plt.step(coarse_curve[0], np.append(coarse_curve[1], coarse_curve[1][-1]), label='Coarse Curve', color='blue')
-    plt.step(fine_curve[0], fine_curve[1], label='Fine Curve', color='orange')
+    plt.step(coarse_curve[0], np.append(coarse_curve[1], coarse_curve[1][-1]), where='post', label='Coarse Curve', color='blue')
+    plt.step(fine_curve[0], fine_curve[1], where='post', label='Fine Curve', color='orange')
     plt.xlabel('Date')
     plt.ylabel('Rate')
     plt.title('Forward Curves')
@@ -152,7 +152,7 @@ def price_basic_cash_flows(mbs, forward_curve):
     rate_dates, rate_vals = forward_curve
 
     # Calculate the present value of the cash flows using the forward curve
-    present_value = calculate_present_value(df, origination_date, rate_vals, rate_dates)
+    present_value = calculate_present_value(df, origination_date, rate_vals, rate_dates, date_name='Payment Date', net_interest_name='Interest Paid')
 
     # Calculate the weighted average life (WAL) of the MBS based on the payment dates and balances
     wal = calculate_weighted_average_life(df, origination_date)
@@ -202,7 +202,7 @@ def price_cash_flows_with_service_fee(mbs, forward_curve):
     rate_dates, rate_vals = forward_curve
 
     # Calculate the present value of the cash flows using the forward curve
-    present_value = calculate_present_value(df, origination_date, rate_vals, rate_dates)
+    present_value = calculate_present_value(df, origination_date, rate_vals, rate_dates, date_name='Payment Date', net_interest_name='Interest Paid')
 
     # Calculate the weighted average life (WAL) of the MBS based on the payment dates and balances
     wal = calculate_weighted_average_life(df, origination_date)
@@ -246,7 +246,7 @@ def price_cash_flows_with_prepayment(mbs, forward_curve):
     rate_dates, rate_vals = forward_curve
 
     # Calculate the present value of the cash flows using the forward curve
-    present_value = calculate_present_value(df, origination_date, rate_vals, rate_dates)
+    present_value = calculate_present_value(df, origination_date, rate_vals, rate_dates, date_name='Payment Date')
 
     # Calculate the weighted average life (WAL) of the MBS using the actual balance
     wal = calculate_weighted_average_life(df, origination_date, balance_name='Actual Balance')
@@ -281,7 +281,7 @@ def price_cash_flows_with_prepayment_and_dates(mbs, forward_curve):
     tuple = (months, dates, payment_dates, scheduled_balances, actual_balances, principal_paydowns, interest_paid, net_interest_paid)
 
     # Convert the tuple into a pandas DataFrame for easier manipulation
-    df = pd.DataFrame(list(zip(*tuple)), columns=['Month', 'Date', 'Payment Date', 'Scheduled Balance', 'Actual Balance', 'Principal Paydown', 'Interest Paid', 'Net Interest Paid'])
+    df = pd.DataFrame(list(zip(*tuple)), columns=['Month', 'Accruel Date', 'Payment Date', 'Scheduled Balance', 'Actual Balance', 'Principal Paydown', 'Interest Paid', 'Net Interest Paid'])
 
     # Unpack the forward curve into rate dates and rate values
     rate_dates, rate_vals = forward_curve
@@ -349,7 +349,7 @@ def main():
     
     # Calculate forward curves
     coarse_curve = bootstrap_forward_curve(calibration_data, effective_rate_date, 100)
-    fine_curve = bootstrap_finer_forward_curve(calibration_data, effective_rate_date, 100, smoothing_error_weight=50000)
+    fine_curve = calibrate_finer_forward_curve(calibration_data, effective_rate_date, 100, smoothing_error_weight=50000)
     
     # Plot the curves
     plot_curves(coarse_curve, fine_curve)
