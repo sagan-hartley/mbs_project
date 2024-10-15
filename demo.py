@@ -3,7 +3,9 @@ import numpy as np
 import ast
 import matplotlib.pyplot as plt
 from datetime import datetime
-from dateutil.relativedelta import relativedelta
+from utils import (
+    discount_cash_flows
+)
 from financial_calculations.forward_curves import (
     bootstrap_forward_curve, 
     calibrate_finer_forward_curve
@@ -14,6 +16,10 @@ from financial_calculations.mbs_cash_flows import (
     calculate_clean_price,
     calculate_present_value,
     calculate_weighted_average_life
+)
+from financial_models.hull_white import (
+    calculate_theta,
+    hull_white_simulate
 )
 
 def parse_datetime(date_str):
@@ -101,7 +107,7 @@ def init_smms(peak=60, length=180, zeros=False):
 
     return smms
 
-def plot_curves(coarse_curve, fine_curve):
+def plot_forward_curves(coarse_curve, fine_curve):
     """
     Plots the coarse and fine forward curves.
 
@@ -207,6 +213,54 @@ def price_mbs_cash_flows(mbs_data, smms, coarse_curve, fine_curve):
 
     return coarse_curve_results, fine_curve_results
 
+def plot_hull_white(hull_white, forward_curve):
+    """
+    Plots the Hull-White simulation results and forward curve.
+
+    Parameters:
+    hull_white (tuple): A tuple of rate dates and rate values for the Hull-White simulation.
+    forward_curve (tuple): A tuple of rate dates and rate values for the forward curve.
+
+    Returns:
+        None
+    """
+    plt.figure(figsize=(10, 6))
+    plt.step(forward_curve[0], forward_curve[1], where='post', label='Fine Curve', color='orange')
+    plt.step(hull_white[0], hull_white[1], where='post', label='Hull White', color='red')
+    plt.xlabel('Date')
+    plt.ylabel('Rate')
+    plt.title('Forward Curves')
+    plt.legend()
+    plt.grid()
+    plt.show()
+
+def plot_hull_white_zcb_prices(hull_white):
+    """
+    Plots the zcb prices based on short rates from a Hull-White simulation.
+
+    Parameters:
+    hull_white (tuple): A tuple of rate dates and rate values for the hull white simulation.
+
+    Returns:
+        None
+    """
+    dates, rates, _ = hull_white # Extract the dates and rates from the Hull-White simulation
+
+    hw_zcb_prices = [] # Initialize the prices list
+
+    # Loop through each date and append a discounted cash flow of 1 occuring on the date
+    for date in dates:
+        price = discount_cash_flows([date], [1], rates, dates)
+        hw_zcb_prices.append(price)
+
+    plt.figure(figsize=(10, 6))
+    plt.scatter(dates, hw_zcb_prices, s=10)
+    plt.xlabel('Date')
+    plt.ylabel('Price')
+    plt.title('ZCB Prices')
+    plt.grid()
+    plt.show()
+
 def main():
     # Define the file paths here
     calibration_file = 'data/daily-treasury-rates.csv'
@@ -221,13 +275,30 @@ def main():
     fine_curve = calibrate_finer_forward_curve(calibration_data, market_close_date, 100, smoothing_error_weight=50000)
     
     # Plot the curves
-    plot_curves(coarse_curve, fine_curve)
+    plot_forward_curves(coarse_curve, fine_curve)
 
     # Initialize SMMs
     smms = init_smms()
     
     # Price MBS cash flows
     results = price_mbs_cash_flows(mbs_data, smms, coarse_curve, fine_curve)
+
+    # Calculate the theta function based on the fine forward curve rates
+    theta = calculate_theta(fine_curve, 0.1, 0.0025, fine_curve[0])
+
+    # Use Hull-White to simulate short rates based on the forward curve data
+    hull_white = hull_white_simulate(0.1, 0.0025, theta, fine_curve[1][0], 100000)
+
+    # Plot to compare the Hull-White simulation to the fine forward curve
+    plot_hull_white(hull_white, fine_curve)
+
+    # Plot the ZCB prices based on short rates from the Hull-White simulation
+    plot_hull_white_zcb_prices(hull_white)
+
+    hull_white_var_reduction = hull_white_simulate(0.1, 0.0025, theta, fine_curve[1][0], 100)
+    hull_white_no_var_reduction = hull_white_simulate(0.1, 0.0025, theta, fine_curve[1][0], 100, False)
+
+    print(f"Antithetic Sampling Average Variance: {np.mean(hull_white_var_reduction[2])}, No Antithetic Sampling Average Variance: {np.mean(hull_white_no_var_reduction[2])}")
 
 if __name__ == '__main__':
     main()
