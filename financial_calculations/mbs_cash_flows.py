@@ -2,7 +2,15 @@ import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
-from utils import discount_cash_flows
+from utils import (
+    DISC_DAYS_IN_YEAR,
+    discount_cash_flows,
+    get_ZCB_vector,
+    days360
+)
+
+CASH_DAYS_IN_YEAR = 360
+PAR_BALANCE = 100
 
 def calculate_monthly_payment(principal, num_months, annual_interest_rate):
     """
@@ -89,7 +97,8 @@ def calculate_scheduled_balances_with_service_fee(principal, num_months, annual_
     )
 
     # Calculate net interest paid (interest paid minus servicing fee)
-    net_interest_paid = interest_paid - np.concatenate(([0], np.full(len(interest_paid) - 1, service_fee_rate)))
+    net_interest_paid = interest_paid - service_fee_rate
+    net_interest_paid[-1] = 0
 
     return months, balances, principal_paydowns, interest_paid, net_interest_paid
 
@@ -107,11 +116,10 @@ def calculate_balances_with_prepayment(principal, num_months, gross_annual_inter
     Returns:
     tuple: (months, scheduled_balances, actual_balances, principal_paydowns, interest_paid, net_interest_paid)
     """
-    months = np.arange(num_months + 1)
     
-    # Calculate scheduled balances, principal paydowns, and interest paid
+    # Calculate months, scheduled balances, scheduled principal paydowns, and gross interest paid
     monthly_payment = calculate_monthly_payment(principal, num_months, gross_annual_interest_rate)
-    _, scheduled_balances, principal_paydowns, interest_paid = calculate_scheduled_balances(
+    months, scheduled_balances, scheduled_principal_paydowns, gross_interest_paid = calculate_scheduled_balances(
         principal, num_months, gross_annual_interest_rate, monthly_payment
     )
 
@@ -125,12 +133,13 @@ def calculate_balances_with_prepayment(principal, num_months, gross_annual_inter
     pool_factors[1:] = np.cumprod(1 - smms)
     pool_factors[-1] = 0
 
-    # Calculate actual balances and net interest paid
+    # Calculate actual balances, actual principal paydowns, and net interest paid
     actual_balances = scheduled_balances * pool_factors
-    servicing_fees = actual_balances * (gross_annual_interest_rate - net_annual_interest_rate) / 12
-    net_interest_paid = interest_paid - servicing_fees
+    actual_principal_paydowns = np.insert(-np.diff(actual_balances), 0, 0)
+    net_interest_paid = actual_balances * net_annual_interest_rate / 12
+    net_interest_paid = np.concatenate(([net_interest_paid[-1]], net_interest_paid[:-1]))
 
-    return months, scheduled_balances, actual_balances, principal_paydowns, interest_paid, net_interest_paid
+    return months, scheduled_balances, actual_balances, actual_principal_paydowns, gross_interest_paid, net_interest_paid
 
 def calculate_balances_with_prepayment_and_dates(principal, num_months, gross_annual_interest_rate, net_annual_interest_rate, smms, origination_date, payment_delay_days=24):
     """
@@ -165,55 +174,86 @@ def calculate_balances_with_prepayment_and_dates(principal, num_months, gross_an
 
     return months, dates, payment_dates, scheduled_balances, actual_balances, principal_paydowns, interest_paid, net_interest_paid
 
-def calculate_weighted_average_life(df, reference_date):
+def calculate_weighted_average_life(df, reference_date, date_name='Accrual Date', payment_date_name='Payment Date', balance_name='Scheduled Balance'):
     """
-    Calculate the Weighted Average Life (WAL) of a loan or security.
+    Calculate the Weighted Average Life (WAL) of a loan or security, excluding payments before the reference date.
 
     Parameters:
-    df (pd.DataFrame): DataFrame containing payment schedule with 'Payment Date' and 'Scheduled Balance'.
-    reference_date (datetime): Reference date for the WAL calculation.
+    df (pd.DataFrame): DataFrame containing the payment schedule, which includes at least the payment dates and scheduled balances.
+                       The column names for these can be specified using 'payment_date_name' and 'balance_name'.
+    reference_date (datetime): The date from which the years to each payment date are calculated (usually the settlement or issue date).
+    date_name (str): Column name for the accrual dates in the DataFrame. Defaults to 'Accrual Date'.
+    paymentdate_name (str): Column name for the payment dates in the DataFrame. Defaults to 'Payment Date'.
+    balance_name (str): Column name for the outstanding balances in the DataFrame. Defaults to 'Scheduled Balance'.
 
     Returns:
-    float: The Weighted Average Life.
+    float: The Weighted Average Life, which represents the average time until principal is repaid, weighted by the amount of principal.
     """
-    # Calculate the number of years between each payment date and the reference date
-    df['Years'] = (df['Payment Date'] - reference_date).dt.days / 365.0
+    # Ensure the accrual date column is in datetime format
+    df[date_name] = pd.to_datetime(df[date_name])
+
+    # Ensure the reference date is also a datetime object
+    reference_date = pd.to_datetime(reference_date)
+
+    # Calculate the number of years between each accrual date and the reference date
+    df.loc[:, 'Years'] = (df[payment_date_name] - reference_date).dt.days / DISC_DAYS_IN_YEAR
+
     # Calculate the principal paydown for each period
-    df['Principal Paydown'] = df['Scheduled Balance'].shift(1, fill_value=0) - df['Scheduled Balance']
-    df.loc[0, 'Principal Paydown'] = 0  # Set the first period's paydown to 0
+    df.loc[:, 'Principal Paydown'] = df[balance_name].shift(1, fill_value=0) - df[balance_name]
+
+     # Set the first period's paydown to 0
+    df.loc[0, 'Principal Paydown'] = 0
+
+    # Filter out any records where the accrual date is before the reference date
+    filtered_df = df[df[date_name] > reference_date]
+
+    if filtered_df.empty:
+        return 0  # No payments after the reference date
 
     # Compute the numerator and denominator for WAL calculation
-    wal_numerator = (df['Years'] * df['Principal Paydown']).sum()
-    wal_denominator = df['Principal Paydown'].sum()
+    wal_numerator = (filtered_df['Years'] * filtered_df['Principal Paydown']).sum()
+    wal_denominator = filtered_df['Principal Paydown'].sum()
 
     # Calculate WAL
     wal = wal_numerator / wal_denominator if wal_denominator != 0 else 0
+
     return wal
 
-def calculate_present_value(schedule, settle_date, rate_vals, rate_dates):
+def calculate_present_value(schedule, settle_date, rate_vals, rate_dates, principal_name='Principal Paydown', net_interest_name='Net Interest Paid', date_name = 'Accrual Date', payment_date_name='Payment Date'):
     """
-    Calculate the present value of cash flows based on zero-coupon bond values.
+    Calculate the present value of cash flows by discounting them with corresponding zero-coupon bond rates.
 
     Parameters:
-    schedule (pd.DataFrame): DataFrame containing payment schedule with 'Payment Date' and 'Principal Paydown'.
-    settle_date (datetime): Settlement date.
-    rate_vals : list of float
-        A list of discount rates (in decimal form) corresponding to the rate_dates.
-        The rates are applied in a piecewise manner between the rate_dates.
-    rate_dates : list of datetime or datetime64[D]
-        A list of dates where the rates change. The first entry represents the market close date (i.e., the 
-        starting point for the discounting process). Rates apply between consecutive dates.
+    schedule (pd.DataFrame): DataFrame containing the payment schedule, including columns for payment dates, principal paydowns, and net interest paid.
+    settle_date (datetime): The settlement date used to filter cash flows occurring after this date.
+    rate_vals (list of float): List of discount rates (in decimal) that correspond to the rate_dates.
+                               These rates are applied piecewise between the rate_dates.
+    rate_dates (list of datetime or datetime64[D]): List of dates representing the start of periods where the rates change.
+                                                    Rates apply between consecutive dates.
+    principal_name (str): Column name for principal payments in the DataFrame. Defaults to 'Principal Paydown'.
+    net_interest_name (str): Column name for net interest payments in the DataFrame. Defaults to 'Net Interest Paid'.
+    date_name (str): Column name for the accrual dates in the DataFrame. Defaults to 'Accrual Date'.
+    payment_date_name (str): Column name for the payment dates in the DataFrame. Defaults to 'Payment Date'.
 
     Returns:
-    float: The present value of the cash flows.
+    float: The present value of the cash flows, calculated by discounting them back to the settlement date using the provided rates.
     """
-    # Filter out cash flows that are before the settlement date
-    filtered_schedule = schedule[schedule['Payment Date'] > settle_date]
-    payment_dates = filtered_schedule['Payment Date'].to_numpy()
-    cash_flows = filtered_schedule['Principal Paydown'].to_numpy()
+    # Filter out cash flows that occur before the settlement date
+    filtered_schedule = schedule[schedule[date_name] > settle_date]
 
-    # Calculate the present value using discount cash flows function
-    present_value = discount_cash_flows(payment_dates, cash_flows, rate_vals, rate_dates)
+    # Ensure there's something to process after filtering
+    if filtered_schedule.empty:
+        return 0.0
+
+    # Extract the payment dates and cash flows
+    payment_dates = filtered_schedule[payment_date_name].to_numpy()
+    cash_flows = (filtered_schedule[principal_name] + filtered_schedule[net_interest_name]).to_numpy()
+
+    # Calculate the initial discount factor from the first rate date to the settle date
+    initial_discount = get_ZCB_vector([settle_date], rate_vals, rate_dates)[0]
+
+    # Calculate the present value using the discount_cash_flows function and dividing by the initial discount factor
+    present_value = discount_cash_flows(payment_dates, cash_flows, rate_vals, rate_dates) / initial_discount
 
     return present_value
 
@@ -228,7 +268,9 @@ def calculate_dirty_price(present_value, balance_at_settle):
     Returns:
     float: The dirty price of the bond.
     """
-    dirty_price = present_value * 100 / balance_at_settle
+    # Use the par balance to normalize the price
+    dirty_price = present_value * PAR_BALANCE / balance_at_settle
+
     return dirty_price
 
 def calculate_clean_price(dirty_price, settle_date, last_coupon_date, annual_interest_rate, balance_at_settle):
@@ -246,10 +288,10 @@ def calculate_clean_price(dirty_price, settle_date, last_coupon_date, annual_int
     float: The clean price of the bond.
     """
     # Calculate the days between the settle and last coupon date
-    days_between = (settle_date - last_coupon_date).days
+    days_between = days360(last_coupon_date, settle_date)
     
     # Calculate the accrued interest
-    accrued_interest = (annual_interest_rate / 365.25) * days_between * balance_at_settle
+    accrued_interest = (annual_interest_rate / CASH_DAYS_IN_YEAR) * days_between * PAR_BALANCE
     
     # Calculate the clean price
     clean_price = dirty_price - accrued_interest

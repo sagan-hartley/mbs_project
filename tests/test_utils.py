@@ -6,7 +6,8 @@ import pytest
 from utils import ( 
     get_ZCB_vector,
     discount_cash_flows,
-    create_fine_dates_grid
+    create_fine_dates_grid,
+    days360
 )
 
 class TestGetZCBVector(unittest.TestCase):
@@ -219,5 +220,55 @@ class TestCreateFineDatesGrid(unittest.TestCase):
         with self.assertRaises(ValueError):
             create_fine_dates_grid(market_close_date, maturity_years, 'daily')  # Invalid interval type
 
-if __name__ == '__main__':
+class TestDays360(unittest.TestCase):
+    def test_same_month(self):
+        """Test case where both dates are in the same month."""
+        d1 = datetime(2024, 10, 1)
+        d2 = datetime(2024, 10, 15)
+        self.assertEqual(days360(d1, d2), 14)
+    
+    def test_full_month(self):
+        """Test case where the second date is the last day of the month."""
+        d1 = datetime(2024, 10, 1)
+        d2 = datetime(2024, 10, 30)
+        self.assertEqual(days360(d1, d2), 29)
+
+    def test_first_day_is_31(self):
+        """Test case where the first date is on the 31st."""
+        d1 = datetime(2024, 10, 31)
+        d2 = datetime(2024, 11, 20)
+        self.assertEqual(days360(d1, d2), 20)
+
+    def test_second_day_is_31(self):
+        """Test case where the first date is on the 31st."""
+        d1 = datetime(2024, 10, 20)
+        d2 = datetime(2024, 9, 30)
+        d3 = datetime(2024, 8, 31)
+        d4 = datetime(2024, 10, 31)
+        self.assertEqual(days360(d1, d4), 10)
+        self.assertEqual(days360(d2, d4), 31)
+        self.assertEqual(days360(d3, d4), 61)
+
+    def test_different_months(self):
+        """Test case where the dates are in different months."""
+        d1 = datetime(2024, 10, 20)
+        d2 = datetime(2024, 11, 15)
+        d3 = datetime(2024, 12, 11)
+        self.assertEqual(days360(d1, d2), 25)
+        self.assertEqual(days360(d1, d3), 51)
+
+    def test_different_years(self):
+        """Test case where the dates are in different years."""
+        d1 = datetime(2024, 10, 20)
+        d2 = datetime(2025, 11, 15)
+        self.assertEqual(days360(d1, d2), 385)
+
+    def test_invalid_date_order(self):
+        """Test case where the first date is later than the second date."""
+        d1 = datetime(2024, 10, 1)
+        d2 = datetime(2024, 9, 30)
+        with self.assertRaises(AssertionError):
+            days360(d1, d2)
+
+if __name__ == "__main__":
     unittest.main()
