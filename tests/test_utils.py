@@ -221,56 +221,54 @@ class TestCreateFineDatesGrid(unittest.TestCase):
             create_fine_dates_grid(market_close_date, maturity_years, 'daily')  # Invalid interval type
 
 class TestDays360(unittest.TestCase):
-    
-    def test_valid_dates(self):
-        """Test a valid case where d1 is the first day of the month and d2 is later in the same month."""
+    def test_same_month(self):
+        """Test case where both dates are in the same month."""
         d1 = datetime(2024, 10, 1)
         d2 = datetime(2024, 10, 15)
         self.assertEqual(days360(d1, d2), 14)
     
-    def test_d1_equals_d2(self):
-        """Test case where d1 equals d2, should return 0 days."""
+    def test_full_month(self):
+        """Test case where the second date is the last day of the month."""
         d1 = datetime(2024, 10, 1)
-        d2 = datetime(2024, 10, 1)
-        self.assertEqual(days360(d1, d2), 0)
-    
-    def test_d1_before_d2(self):
-        """Test valid case with different days in the same month."""
-        d1 = datetime(2024, 10, 1)
-        d2 = datetime(2024, 10, 10)
-        self.assertEqual(days360(d1, d2), 9)
+        d2 = datetime(2024, 10, 30)
+        self.assertEqual(days360(d1, d2), 29)
 
-    def test_not_first_day_of_month(self):
-        """Test case where d1 is not the first day of the month, should raise AssertionError."""
-        d1 = datetime(2024, 10, 5)
-        d2 = datetime(2024, 10, 15)
-        with self.assertRaises(AssertionError) as context:
-            days360(d1, d2)
-        self.assertEqual(str(context.exception), "The first date must be the first day of the month.")
+    def test_first_day_is_31(self):
+        """Test case where the first date is on the 31st."""
+        d1 = datetime(2024, 10, 31)
+        d2 = datetime(2024, 11, 20)
+        self.assertEqual(days360(d1, d2), 20)
+
+    def test_second_day_is_31(self):
+        """Test case where the first date is on the 31st."""
+        d1 = datetime(2024, 10, 20)
+        d2 = datetime(2024, 9, 30)
+        d3 = datetime(2024, 8, 31)
+        d4 = datetime(2024, 10, 31)
+        self.assertEqual(days360(d1, d4), 10)
+        self.assertEqual(days360(d2, d4), 31)
+        self.assertEqual(days360(d3, d4), 61)
 
     def test_different_months(self):
-        """Test case where d1 and d2 are in different months, should raise AssertionError."""
-        d1 = datetime(2024, 10, 1)
-        d2 = datetime(2024, 11, 1)
-        with self.assertRaises(AssertionError) as context:
-            days360(d1, d2)
-        self.assertEqual(str(context.exception), "The dates must be in the same month.")
-        
+        """Test case where the dates are in different months."""
+        d1 = datetime(2024, 10, 20)
+        d2 = datetime(2024, 11, 15)
+        d3 = datetime(2024, 12, 11)
+        self.assertEqual(days360(d1, d2), 25)
+        self.assertEqual(days360(d1, d3), 51)
+
     def test_different_years(self):
-        """Test case where d1 and d2 are in different years, should raise AssertionError."""
-        d1 = datetime(2023, 10, 1)
-        d2 = datetime(2024, 10, 1)
-        with self.assertRaises(AssertionError) as context:
-            days360(d1, d2)
-        self.assertEqual(str(context.exception), "The dates must be in the same year.")
+        """Test case where the dates are in different years."""
+        d1 = datetime(2024, 10, 20)
+        d2 = datetime(2025, 11, 15)
+        self.assertEqual(days360(d1, d2), 385)
 
-    def test_d1_after_d2(self):
-        """Test case where d1 is after d2, should raise AssertionError."""
-        d1 = datetime(2024, 10, 5)
-        d2 = datetime(2024, 10, 1)
-        with self.assertRaises(AssertionError) as context:
+    def test_invalid_date_order(self):
+        """Test case where the first date is later than the second date."""
+        d1 = datetime(2024, 10, 1)
+        d2 = datetime(2024, 9, 30)
+        with self.assertRaises(AssertionError):
             days360(d1, d2)
-        self.assertEqual(str(context.exception), "The first date must be before or equal to the second date.")
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

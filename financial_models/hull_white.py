@@ -1,7 +1,10 @@
 import numpy as np
 from datetime import datetime
-
-HW_DAYS_IN_YEAR = 365.25
+from scipy.optimize import minimize
+from utils import (
+    discount_cash_flows,
+    DISC_DAYS_IN_YEAR
+)
 
 def calculate_theta(forward_curve, alpha, sigma, time_points):
     """
@@ -32,18 +35,21 @@ def calculate_theta(forward_curve, alpha, sigma, time_points):
     if isinstance(rate_dates[0], datetime):
         market_close_date = np.datetime64(rate_dates[0], 'D')
         rate_dates = np.array(rate_dates, dtype = 'datetime64[D]')
-        time_points = np.array(time_points, dtype = 'datetime64[D]')
     else:
         market_close_date = rate_dates[0]
         rate_dates = np.array(rate_dates)
+
+    if isinstance(time_points[0], datetime):
+        time_points = np.array(time_points, dtype = 'datetime64[D]')
+    else:
         time_points = np.array(time_points)
 
     # Filter the time points array to ensure that only positive time point deltas remain
     time_points = time_points[time_points >= market_close_date]
 
     # calculate the time deltas for the forward curve and time point dates
-    rate_time_deltas = (rate_dates - market_close_date).astype(float) / HW_DAYS_IN_YEAR
-    time_point_deltas = (time_points - market_close_date).astype(float) / HW_DAYS_IN_YEAR
+    rate_time_deltas = (rate_dates - market_close_date).astype(float) / DISC_DAYS_IN_YEAR
+    time_point_deltas = (time_points - market_close_date).astype(float) / DISC_DAYS_IN_YEAR
 
     # Use np.interp for linear interpolation of forward rates
     forward_rates = np.interp(time_point_deltas, rate_time_deltas, rate_vals)
@@ -71,10 +77,13 @@ def hull_white_simulate(alpha, sigma, theta, start_rate, iterations=1000, antith
     - theta (tuple) : Tuple of (dates, theta_values) from the Hull-White model.
     - start_rate (float) : The initial rate for the model.
     - iterations (int): Number of iterations for the Monte Carlo simulation. Default is 1000.
+    - antithetic (bool): Boolean used to determine whether anithetic or regular normal sampling should be used for dW. Default is True.
     
     Returns:
     - dates (ndarray) : The dates for each short rate
+    - r_all (ndarray) : The simulated short rate paths for each iterations.
     - r_avg (ndarray) : The average simulated short rate path across iterations.
+    - r_var (ndarray) : The simulated variance for each short rate step across iterations.
     """
     dates, vals = theta
     num_steps = len(dates)
@@ -96,12 +105,17 @@ def hull_white_simulate(alpha, sigma, theta, start_rate, iterations=1000, antith
     
         # Create antithetic variates
         dW = np.concatenate((dW_half, -dW_half), axis=0)  # shape (iterations, num_steps - 1)
+
+        if iterations % 2 == 1:
+            # Add one additional normal sample if the number of iterations is odd
+            dW = np.concatenate((dW, np.random.normal(size=(1, num_steps - 1))), axis=0)
+
     else:
         # Generate random normal increments for the Wiener process for all iterations and all steps if antithetic is False
         dW = np.random.normal(size=(iterations, num_steps - 1))  # shape (iterations, num_steps - 1)
 
     # Calculate time increments
-    dt = (dates[1:] - dates[:-1]).astype(float) / HW_DAYS_IN_YEAR  # shape (num_steps - 1)
+    dt = (dates[1:] - dates[:-1]).astype(float) / DISC_DAYS_IN_YEAR  # shape (num_steps - 1)
 
     # Hull-White short rate evolution
     for t in range(1, num_steps):
@@ -115,4 +129,4 @@ def hull_white_simulate(alpha, sigma, theta, start_rate, iterations=1000, antith
     # Calculate variance across the short rate paths
     r_var = r_all.var(axis=0)
     
-    return dates, r_avg, r_var
+    return dates, r_all, r_avg, r_var

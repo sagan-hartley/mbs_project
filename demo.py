@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-import ast
+import seaborn as sns
 import matplotlib.pyplot as plt
 from datetime import datetime
 from utils import (
@@ -20,6 +20,10 @@ from financial_calculations.mbs_cash_flows import (
 from financial_models.hull_white import (
     calculate_theta,
     hull_white_simulate
+)
+from financial_models.prepayment import (
+    calculate_pccs,
+    calculate_smms
 )
 
 def parse_datetime(date_str):
@@ -128,20 +132,20 @@ def plot_forward_curves(coarse_curve, fine_curve):
     plt.grid()
     plt.show()
 
-def price_cash_flows(mbs, smms, forward_curve):
+def value_cash_flows(mbs, smms, forward_curve):
     """
-    Prices MBS cash flows considering prepayments and payment delays.
-
+    Values MBS cash flows considering prepayments and payment delays.
+    
     Parameters:
     mbs (list): A list containing details of the MBS including ID, balance, number of months, gross and net annual coupons, settle date, single monthly mortality (SMM) rate, and payment delay days.
     smms (ndarray): A ndarray containing prepayment rates.
     forward_curve (tuple): A tuple containing rate dates and corresponding forward rate values.
     
     Returns:
-    tuple: The MBS ID, present value of the cash flows, and weighted average life (WAL) of the security.
+    tuple: The MBS ID, present value of the cash flows, weighted average life (WAL), and the cash flow DataFrame.
     """
 
-    # Unpack the MBS details (excluding the first and last elements)
+    # Unpack the MBS details
     mbs_id, balance, num_months, gross_annual_coupon, net_annual_coupon, settle_date, payment_delay = mbs
 
     # Unpack the forward curve into rate dates and rate values
@@ -152,34 +156,56 @@ def price_cash_flows(mbs, smms, forward_curve):
 
     # Calculate balances, payment dates, and interest paid with prepayment and adjusted payment dates
     months, dates, payment_dates, scheduled_balances, actual_balances, principal_paydowns, interest_paid, net_interest_paid = calculate_balances_with_prepayment_and_dates(
-        balance, num_months, gross_annual_coupon, net_annual_coupon, smms, market_close_date, payment_delay)
+        balance, num_months, gross_annual_coupon, net_annual_coupon, smms, settle_date, payment_delay)
 
     # Create a tuple of payment dates, balances, principal paydowns, interest paid, and net interest paid
-    tuple = (months, dates, payment_dates, scheduled_balances, actual_balances, principal_paydowns, interest_paid, net_interest_paid)
+    data_tuple = (months, dates, payment_dates, scheduled_balances, actual_balances, principal_paydowns, interest_paid, net_interest_paid)
 
     # Convert the tuple into a pandas DataFrame for easier manipulation
-    df = pd.DataFrame(list(zip(*tuple)), columns=['Month', 'Accruel Date', 'Payment Date', 'Scheduled Balance', 'Actual Balance', 'Principal Paydown', 'Interest Paid', 'Net Interest Paid'])
+    df = pd.DataFrame(list(zip(*data_tuple)), columns=['Month', 'Accrual Date', 'Payment Date', 'Scheduled Balance', 'Actual Balance', 'Principal Paydown', 'Interest Paid', 'Net Interest Paid'])
 
     # Calculate the present value of the cash flows using the forward curve
     present_value = calculate_present_value(df, market_close_date, rate_vals, rate_dates)
 
-    # Calculate the balance at the settle date
-    settle_loc = np.searchsorted(dates, settle_date, side='right') - 1 # Get the location for the balance at settle
-    balance_at_settle = df.loc[settle_loc, 'Actual Balance']
-
-    # Calculate the dirty price of the mbs from the present value
-    dirty_price = calculate_dirty_price(present_value, balance_at_settle)
-
-    # Calculate the clean price of the mbs from the dirty price
-    last_coupon_date = df.loc[settle_loc, 'Accruel Date']
-    clean_price = calculate_clean_price(dirty_price, settle_date, last_coupon_date, net_annual_coupon, balance_at_settle)
-
     # Calculate the weighted average life (WAL) of the MBS using the actual balance
     wal = calculate_weighted_average_life(df, settle_date, balance_name='Actual Balance')
 
-    # Return the MBS ID, the clean price of the cash flows, and the WAL
-    return mbs_id, clean_price, wal
+    # Return the MBS ID, the present value, the WAL, and the DataFrame
+    return mbs_id, present_value, wal, df
 
+def price_cash_flows(mbs, smms, forward_curve):
+    """
+    Prices MBS cash flows considering prepayments and payment delays.
+    
+    Parameters:
+    mbs (list): A list containing details of the MBS including ID, balance, number of months, gross and net annual coupons, settle date, single monthly mortality (SMM) rate, and payment delay days.
+    smms (ndarray): A ndarray containing prepayment rates.
+    forward_curve (tuple): A tuple containing rate dates and corresponding forward rate values.
+    
+    Returns:
+    tuple: The MBS ID, clean price of the cash flows, and weighted average life (WAL) of the security.
+    """
+
+    # Call value_cash_flows to get the present value, WAL, and the DataFrame
+    mbs_id, present_value, wal, df = value_cash_flows(mbs, smms, forward_curve)
+
+    # Unpack the MBS details
+    _, balance, num_months, gross_annual_coupon, net_annual_coupon, settle_date, payment_delay = mbs
+
+    # Use the DataFrame returned from value_cash_flows to find the balance at settle
+    dates = df['Accrual Date']
+    settle_loc = np.searchsorted(dates, settle_date, side='right') - 1
+    balance_at_settle = df.loc[settle_loc, 'Actual Balance']
+
+    # Calculate the dirty price from the present value
+    dirty_price = calculate_dirty_price(present_value, balance_at_settle)
+
+    # Calculate the clean price from the dirty price
+    last_coupon_date = df.loc[settle_loc, 'Accrual Date']
+    clean_price = calculate_clean_price(dirty_price, settle_date, last_coupon_date, net_annual_coupon, balance_at_settle)
+
+    # Return the MBS ID, clean price of the cash flows, and the WAL
+    return mbs_id, clean_price, wal
 
 def price_mbs_cash_flows(mbs_data, smms, coarse_curve, fine_curve):
     """
@@ -213,6 +239,92 @@ def price_mbs_cash_flows(mbs_data, smms, coarse_curve, fine_curve):
 
     return coarse_curve_results, fine_curve_results
 
+def value_and_price_mbs_short_rate_paths(mbs_data, short_rates, forward_curve):
+    """
+    Calculate expected values and path variances for MBS based on short rate paths.
+
+    Parameters:
+    - mbs_data (list): List of MBS data, where each entry contains relevant information (e.g., ID, coupon, num_months).
+    - short_rates (ndarray): Array of short rates for the simulation.
+    - forward_curve (tuple): A tuple containing the forward curve data.
+
+    Returns:
+    - results (list): A list of dictionaries containing MBS ID, expected value, expected price, and variances for each MBS.
+    """
+    results = []  # To store results for each MBS
+    market_close_date = forward_curve[0][0] # Extract the market clse date from the forward curve
+
+    # Loop through each MBS in the provided data
+    for mbs in mbs_data:
+        vals = []  # Initialize a list to store calculated values for the current MBS
+        prices = []  # Initialize a list to store calculated prices for the current MBS
+        settle_date = mbs[5]
+        gross_annual_coupon = mbs[3]  # Extract the gross annual coupon rate from the MBS data
+        num_months = mbs[2]  # Extract the number of months for the MBS
+
+        # Calculate the Principal Component Analysis (PCA) values based on short rates
+        pccs = calculate_pccs(short_rates)
+
+        # Calculate Single Monthly Mortality (SMM) rates
+        smms = calculate_smms(pccs, gross_annual_coupon, market_close_date, settle_date, num_months)
+
+        # Loop through each SMM to calculate cash flows
+        for smm in smms:
+            # Calculate the cash flow value for the current MBS using the SMM and forward curve
+            val_results = value_cash_flows(mbs, smm, forward_curve)  # Get the value results returned by value_cash_flows
+            val = val_results[1]  # Extract the present value from val_results
+            
+            # Calculate the clean price for the current MBS using the SMM and forward curve
+            price_results = price_cash_flows(mbs, smm, forward_curve)  # Get the price results returned by price_cash_flows
+            price = price_results[1]  # Extract the clean price from price_results
+            
+            # Append the calculated value and price to their respective lists
+            vals.append(val)
+            prices.append(price)
+
+        # Calculate the variance of the collected cash flow values and prices
+        val_var = np.array(vals).var()
+        price_var = np.array(prices).var()
+
+        # Calculate the mean of the values and prices for the expected cash flow
+        expected_value = np.mean(vals)
+        expected_price = np.mean(prices)
+
+        # Print the results for the current MBS
+        print(f"{mbs[0]}, Expected Value: {expected_value}, Value Path Variance: {val_var}, Expected Price: {expected_price}, Price Path Variance: {price_var}")
+
+        # Store the result in a dictionary for structured output
+        results.append({
+            'mbs_id': mbs[0],  # MBS identifier
+            'expected_value': expected_value,  # Expected cash flow value
+            'value_variance': val_var,  # Variance of the cash flow values
+            'expected_price': expected_price,  # Expected price of the MBS
+            'price_variance': price_var  # Variance of the cash flow prices
+        })
+
+    return results  # Return the list of results for all MBS
+
+def price_zcbs(rate_dates, rate_vals):
+    """
+    Price zero-coupon bonds using given rate dates and forward curve values (rate_vals).
+
+    Parameters:
+    - rate_dates: Array of dates representing the maturities of the ZCBs.
+    - rate_vals: Discount rates or yields corresponding to each maturity date.
+
+    Returns:
+    - zcb_prices: List of discounted prices for each ZCB.
+    """
+    zcb_prices = []  # Initialize the list for ZCB prices
+    
+    # Loop through each date and calculate the price of a ZCB maturing on that date
+    for date in rate_dates:
+        # Calculate the price by discounting cash flow of 1 occuring on the maturity date
+        price = discount_cash_flows([date], [1], rate_vals, rate_dates)
+        zcb_prices.append(price)
+
+    return zcb_prices
+
 def plot_hull_white(hull_white, forward_curve):
     """
     Plots the Hull-White simulation results and forward curve.
@@ -226,10 +338,36 @@ def plot_hull_white(hull_white, forward_curve):
     """
     plt.figure(figsize=(10, 6))
     plt.step(forward_curve[0], forward_curve[1], where='post', label='Fine Curve', color='orange')
-    plt.step(hull_white[0], hull_white[1], where='post', label='Hull White', color='red')
+    plt.step(hull_white[0], hull_white[2], where='post', label='Hull White', color='red')
     plt.xlabel('Date')
     plt.ylabel('Rate')
-    plt.title('Forward Curves')
+    plt.title('Hull White Average Path vs Forward Curve')
+    plt.legend()
+    plt.grid()
+    plt.show()
+
+def plot_hull_white_paths(hull_white, forward_curve):
+    """
+    Plots the Hull-White simulation results and forward curve.
+
+    Parameters:
+    hull_white (tuple): A tuple of rate dates and rate values for the Hull-White simulation.
+    forward_curve (tuple): A tuple of rate dates and rate values for the forward curve.
+
+    Returns:
+        None
+    """
+    num_paths = len(hull_white[1])
+    colors = sns.color_palette("husl", num_paths)  # Generate distinct colors
+    plt.figure(figsize=(10, 6))
+    
+    for index, rate in enumerate(hull_white[1]):
+        plt.step(hull_white[0], rate, where='post', label=f'Hull White Path {index + 1}', color=colors[index], alpha=0.6)
+    
+    plt.step(forward_curve[0], forward_curve[1], where='post', label='Fine Curve', color='orange')
+    plt.xlabel('Date')
+    plt.ylabel('Rate')
+    plt.title('Hull White Paths vs Forward Curve')
     plt.legend()
     plt.grid()
     plt.show()
@@ -244,14 +382,9 @@ def plot_hull_white_zcb_prices(hull_white):
     Returns:
         None
     """
-    dates, rates, _ = hull_white # Extract the dates and rates from the Hull-White simulation
+    dates, _ , rates, _ = hull_white # Extract the dates and rates from the Hull-White simulation
 
-    hw_zcb_prices = [] # Initialize the prices list
-
-    # Loop through each date and append a discounted cash flow of 1 occuring on the date
-    for date in dates:
-        price = discount_cash_flows([date], [1], rates, dates)
-        hw_zcb_prices.append(price)
+    hw_zcb_prices = price_zcbs(dates, rates) # Calculate the ZCB prices
 
     plt.figure(figsize=(10, 6))
     plt.scatter(dates, hw_zcb_prices, s=10)
@@ -283,22 +416,37 @@ def main():
     # Price MBS cash flows
     results = price_mbs_cash_flows(mbs_data, smms, coarse_curve, fine_curve)
 
+    # Define the start rate based on information from the fine forward curve
+    start_rate = fine_curve[1][0]
+
+    # Define alpha and sigma
+    alpha, sigma = 1, 0.01
+
+    print(f"Alpha: {alpha}, Sigma: {sigma}")
+
     # Calculate the theta function based on the fine forward curve rates
-    theta = calculate_theta(fine_curve, 0.1, 0.0025, fine_curve[0])
+    theta = calculate_theta(fine_curve, alpha, sigma, fine_curve[0])
 
     # Use Hull-White to simulate short rates based on the forward curve data
-    hull_white = hull_white_simulate(0.1, 0.0025, theta, fine_curve[1][0], 100000)
+    hull_white = hull_white_simulate(alpha, sigma, theta, start_rate, 10000)
+    hull_white_2 = hull_white_simulate(alpha, sigma, theta, start_rate, 6, False) # Create separate simulations with low number of iterations to plot individual paths
+    hull_white_3 = hull_white_simulate(alpha, sigma, theta, start_rate, 6)
 
     # Plot to compare the Hull-White simulation to the fine forward curve
     plot_hull_white(hull_white, fine_curve)
+    plot_hull_white_paths(hull_white_2, fine_curve)
+    plot_hull_white_paths(hull_white_3, fine_curve)
 
     # Plot the ZCB prices based on short rates from the Hull-White simulation
     plot_hull_white_zcb_prices(hull_white)
 
-    hull_white_var_reduction = hull_white_simulate(0.1, 0.0025, theta, fine_curve[1][0], 100)
-    hull_white_no_var_reduction = hull_white_simulate(0.1, 0.0025, theta, fine_curve[1][0], 100, False)
+    # Print the average variance of antithetic vs regular sampling Hull-White simmulations
+    print(f"Antithetic Sampling 30-yr Rate Variance: {hull_white_3[3][-1]}, No Antithetic Sampling 30-yr Rate Variance: {hull_white_2[3][-1]}")
 
-    print(f"Antithetic Sampling Average Variance: {np.mean(hull_white_var_reduction[2])}, No Antithetic Sampling Average Variance: {np.mean(hull_white_no_var_reduction[2])}")
+    # Extract the short rate paths from the Hull-White simulation
+    short_rates = hull_white[1]
+
+    simulated_mbs_values = value_and_price_mbs_short_rate_paths(mbs_data, short_rates, fine_curve)
 
 if __name__ == '__main__':
     main()

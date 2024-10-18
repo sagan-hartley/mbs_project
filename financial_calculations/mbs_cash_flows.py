@@ -174,7 +174,7 @@ def calculate_balances_with_prepayment_and_dates(principal, num_months, gross_an
 
     return months, dates, payment_dates, scheduled_balances, actual_balances, principal_paydowns, interest_paid, net_interest_paid
 
-def calculate_weighted_average_life(df, reference_date, date_name='Accruel Date', payment_date_name='Payment Date', balance_name='Scheduled Balance'):
+def calculate_weighted_average_life(df, reference_date, date_name='Accrual Date', payment_date_name='Payment Date', balance_name='Scheduled Balance'):
     """
     Calculate the Weighted Average Life (WAL) of a loan or security, excluding payments before the reference date.
 
@@ -182,20 +182,20 @@ def calculate_weighted_average_life(df, reference_date, date_name='Accruel Date'
     df (pd.DataFrame): DataFrame containing the payment schedule, which includes at least the payment dates and scheduled balances.
                        The column names for these can be specified using 'payment_date_name' and 'balance_name'.
     reference_date (datetime): The date from which the years to each payment date are calculated (usually the settlement or issue date).
-    date_name (str): Column name for the accruel dates in the DataFrame. Defaults to 'Accruel Date'.
+    date_name (str): Column name for the accrual dates in the DataFrame. Defaults to 'Accrual Date'.
     paymentdate_name (str): Column name for the payment dates in the DataFrame. Defaults to 'Payment Date'.
     balance_name (str): Column name for the outstanding balances in the DataFrame. Defaults to 'Scheduled Balance'.
 
     Returns:
     float: The Weighted Average Life, which represents the average time until principal is repaid, weighted by the amount of principal.
     """
-    # Ensure the accruel date column is in datetime format
+    # Ensure the accrual date column is in datetime format
     df[date_name] = pd.to_datetime(df[date_name])
 
     # Ensure the reference date is also a datetime object
     reference_date = pd.to_datetime(reference_date)
 
-    # Calculate the number of years between each accruel date and the reference date
+    # Calculate the number of years between each accrual date and the reference date
     df.loc[:, 'Years'] = (df[payment_date_name] - reference_date).dt.days / DISC_DAYS_IN_YEAR
 
     # Calculate the principal paydown for each period
@@ -204,7 +204,7 @@ def calculate_weighted_average_life(df, reference_date, date_name='Accruel Date'
      # Set the first period's paydown to 0
     df.loc[0, 'Principal Paydown'] = 0
 
-    # Filter out any records where the accruel date is before the reference date
+    # Filter out any records where the accrual date is before the reference date
     filtered_df = df[df[date_name] > reference_date]
 
     if filtered_df.empty:
@@ -219,7 +219,7 @@ def calculate_weighted_average_life(df, reference_date, date_name='Accruel Date'
 
     return wal
 
-def calculate_present_value(schedule, settle_date, rate_vals, rate_dates, principal_name='Principal Paydown', net_interest_name='Net Interest Paid', date_name = 'Accruel Date', payment_date_name='Payment Date'):
+def calculate_present_value(schedule, settle_date, rate_vals, rate_dates, principal_name='Principal Paydown', net_interest_name='Net Interest Paid', date_name = 'Accrual Date', payment_date_name='Payment Date'):
     """
     Calculate the present value of cash flows by discounting them with corresponding zero-coupon bond rates.
 
@@ -232,7 +232,7 @@ def calculate_present_value(schedule, settle_date, rate_vals, rate_dates, princi
                                                     Rates apply between consecutive dates.
     principal_name (str): Column name for principal payments in the DataFrame. Defaults to 'Principal Paydown'.
     net_interest_name (str): Column name for net interest payments in the DataFrame. Defaults to 'Net Interest Paid'.
-    date_name (str): Column name for the accruel dates in the DataFrame. Defaults to 'Accruel Date'.
+    date_name (str): Column name for the accrual dates in the DataFrame. Defaults to 'Accrual Date'.
     payment_date_name (str): Column name for the payment dates in the DataFrame. Defaults to 'Payment Date'.
 
     Returns:

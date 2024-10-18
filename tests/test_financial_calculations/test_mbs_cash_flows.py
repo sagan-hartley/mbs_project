@@ -74,7 +74,7 @@ class BaseTestCase(unittest.TestCase):
                                                            self.market_close_date, self.payment_delay_days)
     
         # Convert the MBS results into a DataFrame for easy access in tests
-        self.mbs_df = pd.DataFrame(list(zip(*mbs)), columns=['Month', 'Accruel Date', 'Payment Date', 'Scheduled Balance', 
+        self.mbs_df = pd.DataFrame(list(zip(*mbs)), columns=['Month', 'Accrual Date', 'Payment Date', 'Scheduled Balance', 
                                                              'Actual Balance', 'Principal Paydown', 'Interest Paid', 
                                                              'Net Interest Paid'])
         
@@ -260,7 +260,7 @@ class TestCalculateDirtyPrice(BaseTestCase):
                                                        self.market_close_date, self.payment_delay_days)
     
         # Convert the results into a DataFrame and store it
-        small_balance_mbs_df = pd.DataFrame(list(zip(*small_balance_mbs)), columns=['Month', 'Accruel Date', 'Payment Date', 'Scheduled Balance', 
+        small_balance_mbs_df = pd.DataFrame(list(zip(*small_balance_mbs)), columns=['Month', 'Accrual Date', 'Payment Date', 'Scheduled Balance', 
                                                     'Actual Balance', 'Principal Paydown', 'Interest Paid', 
                                                     'Net Interest Paid']) 
         
@@ -273,7 +273,7 @@ class TestCalculateDirtyPrice(BaseTestCase):
                                                        self.market_close_date, self.payment_delay_days)
     
         # Convert the results into a DataFrame and store it
-        large_balance_mbs_df = pd.DataFrame(list(zip(*large_balance_mbs)), columns=['Month', 'Accruel Date', 'Payment Date', 'Scheduled Balance', 
+        large_balance_mbs_df = pd.DataFrame(list(zip(*large_balance_mbs)), columns=['Month', 'Accrual Date', 'Payment Date', 'Scheduled Balance', 
                                                     'Actual Balance', 'Principal Paydown', 'Interest Paid', 
                                                     'Net Interest Paid']) 
         
