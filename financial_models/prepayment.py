@@ -50,8 +50,8 @@ def calculate_smms(pccs, coupon, market_close_date, settle_date, num_months, alp
     pccs = pccs[:, total_months_diff:total_months_diff + num_months]  
     
     # Calculate SMMs based on the conditions
-    smms = np.where(pccs < coupon, alpha*(coupon-pccs), 0) # Vectorized condition
-    smms = np.clip(smms, 0, 1)  # Cap the SMM values at 1
+    smms = alpha*(coupon - pccs) # Vectorized condition
+    smms = np.clip(smms, 0, 1)  # Clip the SMM values to the range [0, 1]
     
     return smms
 

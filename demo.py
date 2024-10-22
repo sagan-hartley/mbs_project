@@ -1,8 +1,11 @@
-import pandas as pd
+import pstats
+import cProfile
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
 import numpy as np
 import seaborn as sns
+import pandas as pd
 import matplotlib.pyplot as plt
-from datetime import datetime
 from utils import (
     discount_cash_flows
 )
@@ -11,6 +14,8 @@ from financial_calculations.forward_curves import (
     calibrate_finer_forward_curve
 )
 from financial_calculations.mbs_cash_flows import (
+    calculate_monthly_payment,
+    calculate_scheduled_balances,
     calculate_balances_with_prepayment_and_dates,
     calculate_dirty_price,
     calculate_clean_price,
@@ -76,7 +81,12 @@ def load_mbs_data(mbs_file):
     # Apply the datetime parsing to the Accruel Date column
     mbs_data[5] = mbs_data[5].apply(parse_datetime)
 
+    # Convert values to a list
     mbs_data = mbs_data.values.tolist()
+
+    # For each settle date compute accrual dates grid
+    for mbs in mbs_data:
+        mbs[5] = [mbs[5] + relativedelta(months=i) for i in range(mbs[2] + 1)]
 
     return mbs_data
 
@@ -93,7 +103,6 @@ def init_smms(peak=60, length=180, zeros=False):
     smms (ndarray): a numpy array containing the SMMs
 
     """
-
     # Check if zeros is True and initialize an array of zeros if so
     if zeros == True:
         smms = np.zeros(length)
@@ -132,21 +141,22 @@ def plot_forward_curves(coarse_curve, fine_curve):
     plt.grid()
     plt.show()
 
-def value_cash_flows(mbs, smms, forward_curve):
+def evaluate_cash_flows(scheduled_balance_data, mbs, smms, forward_curve):
     """
-    Values MBS cash flows considering prepayments and payment delays.
-    
+    Values and prices MBS cash flows considering prepayments and payment delays.
+
     Parameters:
+    scheduled_balance_data: Scheduled balance data.
     mbs (list): A list containing details of the MBS including ID, balance, number of months, gross and net annual coupons, settle date, single monthly mortality (SMM) rate, and payment delay days.
     smms (ndarray): A ndarray containing prepayment rates.
     forward_curve (tuple): A tuple containing rate dates and corresponding forward rate values.
-    
+
     Returns:
-    tuple: The MBS ID, present value of the cash flows, weighted average life (WAL), and the cash flow DataFrame.
+    tuple: The MBS ID, clean price of the cash flows, present value of the cash flows, weighted average life (WAL), and the cash flow DataFrame.
     """
 
     # Unpack the MBS details
-    mbs_id, balance, num_months, gross_annual_coupon, net_annual_coupon, settle_date, payment_delay = mbs
+    mbs_id, balance, num_months, gross_annual_coupon, net_annual_coupon, accrual_dates, payment_delay = mbs
 
     # Unpack the forward curve into rate dates and rate values
     rate_dates, rate_vals = forward_curve
@@ -154,15 +164,18 @@ def value_cash_flows(mbs, smms, forward_curve):
     # Get the market close date from the forward curve
     market_close_date = rate_dates[0]
 
+    # Get the settle date from the accrual dates
+    settle_date = accrual_dates[0]
+
     # Calculate balances, payment dates, and interest paid with prepayment and adjusted payment dates
-    months, dates, payment_dates, scheduled_balances, actual_balances, principal_paydowns, interest_paid, net_interest_paid = calculate_balances_with_prepayment_and_dates(
-        balance, num_months, gross_annual_coupon, net_annual_coupon, smms, settle_date, payment_delay)
+    months, dates, payment_dates, scheduled_balances, actual_balances, scheduled_principal_paydowns, actual_principal_paydowns, interest_paid, net_interest_paid = calculate_balances_with_prepayment_and_dates(
+        scheduled_balance_data, smms, net_annual_coupon, accrual_dates, payment_delay)
 
     # Create a tuple of payment dates, balances, principal paydowns, interest paid, and net interest paid
-    data_tuple = (months, dates, payment_dates, scheduled_balances, actual_balances, principal_paydowns, interest_paid, net_interest_paid)
+    data_tuple = (months, dates, payment_dates, scheduled_balances, actual_balances, scheduled_principal_paydowns, actual_principal_paydowns, interest_paid, net_interest_paid)
 
     # Convert the tuple into a pandas DataFrame for easier manipulation
-    df = pd.DataFrame(list(zip(*data_tuple)), columns=['Month', 'Accrual Date', 'Payment Date', 'Scheduled Balance', 'Actual Balance', 'Principal Paydown', 'Interest Paid', 'Net Interest Paid'])
+    df = pd.DataFrame(list(zip(*data_tuple)), columns=['Month', 'Accrual Date', 'Payment Date', 'Scheduled Balance', 'Actual Balance', 'Scheduled Principal Paydowns', 'Actual Principal Paydowns', 'Interest Paid', 'Net Interest Paid'])
 
     # Calculate the present value of the cash flows using the forward curve
     present_value = calculate_present_value(df, market_close_date, rate_vals, rate_dates)
@@ -170,29 +183,7 @@ def value_cash_flows(mbs, smms, forward_curve):
     # Calculate the weighted average life (WAL) of the MBS using the actual balance
     wal = calculate_weighted_average_life(df, settle_date, balance_name='Actual Balance')
 
-    # Return the MBS ID, the present value, the WAL, and the DataFrame
-    return mbs_id, present_value, wal, df
-
-def price_cash_flows(mbs, smms, forward_curve):
-    """
-    Prices MBS cash flows considering prepayments and payment delays.
-    
-    Parameters:
-    mbs (list): A list containing details of the MBS including ID, balance, number of months, gross and net annual coupons, settle date, single monthly mortality (SMM) rate, and payment delay days.
-    smms (ndarray): A ndarray containing prepayment rates.
-    forward_curve (tuple): A tuple containing rate dates and corresponding forward rate values.
-    
-    Returns:
-    tuple: The MBS ID, clean price of the cash flows, and weighted average life (WAL) of the security.
-    """
-
-    # Call value_cash_flows to get the present value, WAL, and the DataFrame
-    mbs_id, present_value, wal, df = value_cash_flows(mbs, smms, forward_curve)
-
-    # Unpack the MBS details
-    _, balance, num_months, gross_annual_coupon, net_annual_coupon, settle_date, payment_delay = mbs
-
-    # Use the DataFrame returned from value_cash_flows to find the balance at settle
+    # Use the DataFrame to find the balance at settle
     dates = df['Accrual Date']
     settle_loc = np.searchsorted(dates, settle_date, side='right') - 1
     balance_at_settle = df.loc[settle_loc, 'Actual Balance']
@@ -202,10 +193,10 @@ def price_cash_flows(mbs, smms, forward_curve):
 
     # Calculate the clean price from the dirty price
     last_coupon_date = df.loc[settle_loc, 'Accrual Date']
-    clean_price = calculate_clean_price(dirty_price, settle_date, last_coupon_date, net_annual_coupon, balance_at_settle)
+    clean_price = calculate_clean_price(dirty_price, settle_date, last_coupon_date, net_annual_coupon)
 
-    # Return the MBS ID, clean price of the cash flows, and the WAL
-    return mbs_id, clean_price, wal
+    # Return the MBS ID, clean price, present value, WAL, and the DataFrame
+    return mbs_id, clean_price, present_value, wal, df
 
 def price_mbs_cash_flows(mbs_data, smms, coarse_curve, fine_curve):
     """
@@ -228,10 +219,16 @@ def price_mbs_cash_flows(mbs_data, smms, coarse_curve, fine_curve):
 
     # Loop through each mbs and print the ID, coarse price, fine price, and WAL
     for mbs in mbs_data:
-        coarse_curve_result = price_cash_flows(mbs, smms, coarse_curve)
-        fine_curve_result = price_cash_flows(mbs, smms, fine_curve)
+        # Unpack the MBS details
+        mbs_id, balance, num_months, gross_annual_coupon, net_annual_coupon, accrual_dates, payment_delay = mbs
+
+        # Calculate the necessary scheduled balance data to price the cash flows
+        scheduled_balance_data = calculate_scheduled_balances(balance, num_months, gross_annual_coupon, calculate_monthly_payment(balance, num_months, gross_annual_coupon))
+
+        coarse_curve_result = evaluate_cash_flows(scheduled_balance_data, mbs, smms, coarse_curve)
+        fine_curve_result = evaluate_cash_flows(scheduled_balance_data, mbs, smms, fine_curve)
         
-        print(f"{mbs[0]}: Coarse Price = {coarse_curve_result[1]}, Fine Price = {fine_curve_result[1]}, WAL = {coarse_curve_result[2]} years")
+        print(f"{mbs[0]}: Coarse Price = {coarse_curve_result[1]}, Fine Price = {fine_curve_result[1]}, WAL = {coarse_curve_result[3]} years")
 
         # Append the results
         coarse_curve_results.append(coarse_curve_result)
@@ -239,9 +236,9 @@ def price_mbs_cash_flows(mbs_data, smms, coarse_curve, fine_curve):
 
     return coarse_curve_results, fine_curve_results
 
-def value_and_price_mbs_short_rate_paths(mbs_data, short_rates, forward_curve):
+def evaluate_mbs_short_rate_paths(mbs_data, short_rates, forward_curve):
     """
-    Calculate expected values and path variances for MBS based on short rate paths.
+    Calculate expected values and prices and path variances for MBS based on short rate paths.
 
     Parameters:
     - mbs_data (list): List of MBS data, where each entry contains relevant information (e.g., ID, coupon, num_months).
@@ -258,9 +255,15 @@ def value_and_price_mbs_short_rate_paths(mbs_data, short_rates, forward_curve):
     for mbs in mbs_data:
         vals = []  # Initialize a list to store calculated values for the current MBS
         prices = []  # Initialize a list to store calculated prices for the current MBS
-        settle_date = mbs[5]
-        gross_annual_coupon = mbs[3]  # Extract the gross annual coupon rate from the MBS data
-        num_months = mbs[2]  # Extract the number of months for the MBS
+
+        # Unpack the MBS details
+        mbs_id, balance, num_months, gross_annual_coupon, net_annual_coupon, accrual_dates, payment_delay = mbs
+
+        # Get the settle date from the accrual dates
+        settle_date = accrual_dates[0]
+
+        # Calculate the necessary scheduled balance data to value and price the cash flows
+        scheduled_balance_data = calculate_scheduled_balances(balance, num_months, gross_annual_coupon, calculate_monthly_payment(balance, num_months, gross_annual_coupon))
 
         # Calculate the Principal Component Analysis (PCA) values based on short rates
         pccs = calculate_pccs(short_rates)
@@ -270,13 +273,10 @@ def value_and_price_mbs_short_rate_paths(mbs_data, short_rates, forward_curve):
 
         # Loop through each SMM to calculate cash flows
         for smm in smms:
-            # Calculate the cash flow value for the current MBS using the SMM and forward curve
-            val_results = value_cash_flows(mbs, smm, forward_curve)  # Get the value results returned by value_cash_flows
-            val = val_results[1]  # Extract the present value from val_results
-            
-            # Calculate the clean price for the current MBS using the SMM and forward curve
-            price_results = price_cash_flows(mbs, smm, forward_curve)  # Get the price results returned by price_cash_flows
-            price = price_results[1]  # Extract the clean price from price_results
+            # Evaluate the cash flows for the current MBS using the SMM and forward curve
+            eval_results = evaluate_cash_flows(scheduled_balance_data, mbs, smm, forward_curve)
+            price = eval_results[1] # Extract the clean price from eval_results
+            val = eval_results[2]  # Extract the present value from eval_results
             
             # Append the calculated value and price to their respective lists
             vals.append(val)
@@ -446,7 +446,10 @@ def main():
     # Extract the short rate paths from the Hull-White simulation
     short_rates = hull_white[1]
 
-    simulated_mbs_values = value_and_price_mbs_short_rate_paths(mbs_data, short_rates, fine_curve)
+    simulated_mbs_values = evaluate_mbs_short_rate_paths(mbs_data, short_rates, fine_curve)
 
 if __name__ == '__main__':
-    main()
+    cProfile.run('main()', 'profile_output.prof')
+    profile = pstats.Stats('profile_output.prof')
+    profile.strip_dirs().sort_stats('time').print_stats(10)
+    #main()

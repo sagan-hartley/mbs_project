@@ -45,7 +45,10 @@ class BaseTestCase(unittest.TestCase):
 
         # Market close date (start date for calculations)
         self.market_close_date = datetime(2008, 1, 1)
-        
+
+        # Accrual dates grid
+        self.accrual_dates = [self.market_close_date + relativedelta(months=i) for i in range(self.num_months + 1)]
+
         # Settle dates for testing payment-related functions
         self.settle_dates = [datetime(2008, 1, 1), datetime(2008, 1, 15), datetime(2008, 2, 1), datetime(2008, 2, 25)]
         self.last_coupon_dates = [datetime(2008, 1, 1), datetime(2008, 1, 1), datetime(2008, 2, 1), datetime(2008, 2, 1)]
@@ -56,9 +59,6 @@ class BaseTestCase(unittest.TestCase):
         # Balance at the time of each settlement date
         self.balances_at_settle = [100, 100, 99.68450506248092, 99.68450506248092]
 
-        # Calculate monthly payment using gross interest rate
-        self.gross_rate_monthly_payment = calculate_monthly_payment(self.balance, self.num_months, self.gross_annual_interest_rate)
-
         # Expected present values of cash flows for different settle dates
         self.expected_present_values = [111.01502829546669, 111.04476929266467, 110.20580839957505, 110.57219293568582]
         
@@ -68,14 +68,17 @@ class BaseTestCase(unittest.TestCase):
         # Expected clean prices for different settle dates
         self.expected_clean_prices = [111.01502829546669, 110.78226929266465, 110.55460257389001, 110.47214669309]
 
+        # calculate the monthly payment and scheduled balance data for the MBS
+        self.monthly_payment = calculate_monthly_payment(self.balance, self.num_months, self.gross_annual_interest_rate)
+        self.scheduled_balance_data = calculate_scheduled_balances(self.balance, self.num_months, self.gross_annual_interest_rate, self.monthly_payment)
+
         # Calculate MBS cash flows with prepayment and payment dates
-        mbs = calculate_balances_with_prepayment_and_dates(self.balance, self.num_months, self.gross_annual_interest_rate, 
-                                                           self.net_annual_interest_rate, self.smms, 
-                                                           self.market_close_date, self.payment_delay_days)
+        self.mbs = calculate_balances_with_prepayment_and_dates(self.scheduled_balance_data, self.smms, self.net_annual_interest_rate,
+                                                           self.accrual_dates, self.payment_delay_days)
     
         # Convert the MBS results into a DataFrame for easy access in tests
-        self.mbs_df = pd.DataFrame(list(zip(*mbs)), columns=['Month', 'Accrual Date', 'Payment Date', 'Scheduled Balance', 
-                                                             'Actual Balance', 'Principal Paydown', 'Interest Paid', 
+        self.mbs_df = pd.DataFrame(list(zip(*self.mbs)), columns=['Month', 'Accrual Date', 'Payment Date', 'Scheduled Balance',
+                                                             'Actual Balance', 'Scheduled Principal Paydowns', 'Actual Principal Paydowns', 'Gross Interest Paid', 
                                                              'Net Interest Paid'])
         
         # Discount rates for present value calculations (one rate per month)
@@ -120,7 +123,17 @@ class BaseTestCase(unittest.TestCase):
         ])
 
         # Corresponding discount rate dates, incremented monthly starting from market close
-        self.discount_rate_dates = [self.market_close_date + relativedelta(months=i) for i in range(181)]
+        self.discount_rate_dates = [self.market_close_date + relativedelta(months=i) for i in range(self.num_months + 1)]
+
+        # calculate the monthly payment and scheduled balance data for the small and large balance MBSes
+        self.small_balance = 10
+        self.large_balance = 1000
+
+        self.small_monthly_payment = calculate_monthly_payment(self.small_balance, self.num_months, self.gross_annual_interest_rate)
+        self.large_monthly_payment = calculate_monthly_payment(self.large_balance, self.num_months, self.gross_annual_interest_rate)
+
+        self.scheduled_small_balance_data = calculate_scheduled_balances(self.small_balance, self.num_months, self.gross_annual_interest_rate, self.small_monthly_payment)
+        self.scheduled_large_balance_data = calculate_scheduled_balances(self.large_balance, self.num_months, self.gross_annual_interest_rate, self.large_monthly_payment)
 
 class TestCalculateMonthlyPayment(unittest.TestCase):
     """
@@ -154,9 +167,7 @@ class TestCalculateScheduledBalances(BaseTestCase):
 
     def test_basic(self):
         """Test calculation of scheduled balances over a set period."""
-        months, scheduled_balances, principal_paydowns, interest_paid = calculate_scheduled_balances(
-            self.balance, self.num_months, self.gross_annual_interest_rate, self.gross_rate_monthly_payment
-        )
+        scheduled_balances = self.scheduled_balance_data[1]
         some_expected_balances = [100.  ,  99.68,  99.37,  99.05,  98.73]
         np.testing.assert_array_almost_equal(scheduled_balances[0:5], some_expected_balances, decimal=2)
         np.testing.assert_almost_equal(0, scheduled_balances[-1], decimal=2)
@@ -170,7 +181,7 @@ class TestCalculateScheduledBalancesWithServiceFee(BaseTestCase):
     def test_basic(self):
         """Test calculation of balances including service fees."""
         months, balances, principal_paydowns, interest_paid, net_interest_paid = calculate_scheduled_balances_with_service_fee(
-            self.balance, self.num_months, self.gross_annual_interest_rate, self.gross_rate_monthly_payment, self.service_fee_rate
+            self.balance, self.num_months, self.gross_annual_interest_rate, self.monthly_payment, self.service_fee_rate
         )
         some_expected_net_interest_paid = [0.  ,  0.56,  0.56,  0.56,  0.55]
         np.testing.assert_almost_equal(net_interest_paid[0:5], some_expected_net_interest_paid, decimal=2)
@@ -184,9 +195,7 @@ class TestCalculateBalancesWithPrepayment(BaseTestCase):
     def test_basic(self):
         """Test calculation of balances with prepayment rates."""
         
-        months, scheduled_balances, actual_balances, principal_paydowns, interest_paid, net_interest_paid = calculate_balances_with_prepayment(
-            self.balance, self.num_months, self.gross_annual_interest_rate, self.gross_rate_monthly_payment, self.smms
-        )
+        actual_balances = calculate_balances_with_prepayment(self.scheduled_balance_data, self.smms, self.net_annual_interest_rate)[2]
         np.testing.assert_almost_equal(actual_balances[0:3], [100, 99.68, 99.35], decimal=2)
         np.testing.assert_almost_equal(actual_balances[59:62], [58.48, 57.58, 56.67], decimal=2)
         np.testing.assert_almost_equal(actual_balances[178:181], [0.72, 0.36, 0], decimal=2)
@@ -199,9 +208,9 @@ class TestCalculateBalancesWithPrepaymentAndDates(BaseTestCase):
 
     def test_basic(self):
         """Test calculation of balances with prepayment rates and payment dates."""
-        months, dates, payment_dates, scheduled_balances, actual_balances, principal_paydowns, interest_paid, net_interest_paid = calculate_balances_with_prepayment_and_dates(
-            self.balance, self.num_months, self.gross_annual_interest_rate, self.gross_rate_monthly_payment, self.smms, self.settle_dates[0], self.payment_delay_days
-        )
+        dates = self.mbs[1]
+        payment_dates = self.mbs[2]
+        actual_balances = self.mbs[4]
         np.testing.assert_almost_equal(actual_balances[0:3], [100, 99.68, 99.35], decimal=2)
         np.testing.assert_almost_equal(actual_balances[59:62], [58.48, 57.58, 56.67], decimal=2)
         np.testing.assert_almost_equal(actual_balances[178:181], [0.72, 0.36, 0], decimal=2)
@@ -255,26 +264,26 @@ class TestCalculateDirtyPrice(BaseTestCase):
         """Test present value calculation of cash flow schedules with varying balances."""
 
         # Calculate the results associated with the exact same MBS in the setup except the balance is 10 instead of 100
-        small_balance_mbs = calculate_balances_with_prepayment_and_dates(10, self.num_months, self.gross_annual_interest_rate, 
-                                                       self.net_annual_interest_rate, self.smms, 
-                                                       self.market_close_date, self.payment_delay_days)
+        small_balance_mbs = calculate_balances_with_prepayment_and_dates(self.scheduled_small_balance_data,
+                                                       self.smms, self.net_annual_interest_rate, 
+                                                       self.accrual_dates, self.payment_delay_days)
     
         # Convert the results into a DataFrame and store it
         small_balance_mbs_df = pd.DataFrame(list(zip(*small_balance_mbs)), columns=['Month', 'Accrual Date', 'Payment Date', 'Scheduled Balance', 
-                                                    'Actual Balance', 'Principal Paydown', 'Interest Paid', 
+                                                    'Actual Balance', 'Scheduled Principal Paydowns', 'Actual Principal Paydowns', 'Gross Interest Paid', 
                                                     'Net Interest Paid']) 
         
         # Initialize small balances at settle list
         small_balances_at_settle = [10, 10, 9.968450506248092, 9.968450506248092]
         
         # Calculate the results associated with the exact same MBS in the setup except the balance is 1000 instead of 100
-        large_balance_mbs = calculate_balances_with_prepayment_and_dates(1000, self.num_months, self.gross_annual_interest_rate, 
-                                                       self.net_annual_interest_rate, self.smms, 
-                                                       self.market_close_date, self.payment_delay_days)
+        large_balance_mbs = calculate_balances_with_prepayment_and_dates(self.scheduled_large_balance_data,
+                                                        self.smms, self.net_annual_interest_rate,
+                                                       self.accrual_dates, self.payment_delay_days)
     
         # Convert the results into a DataFrame and store it
         large_balance_mbs_df = pd.DataFrame(list(zip(*large_balance_mbs)), columns=['Month', 'Accrual Date', 'Payment Date', 'Scheduled Balance', 
-                                                    'Actual Balance', 'Principal Paydown', 'Interest Paid', 
+                                                    'Actual Balance', 'Scheduled Principal Paydowns', 'Actual Principal Paydowns', 'Gross Interest Paid', 
                                                     'Net Interest Paid']) 
         
         # Initialize large balances at settle list
@@ -312,7 +321,7 @@ class TestCalculateCleanPrice(BaseTestCase):
         """Test clean price calculation from dirty price and accrued interest."""
         clean_prices = []
         for i in range(4):
-            clean_price = calculate_clean_price(self.expected_dirty_prices[i], self.settle_dates[i], self.last_coupon_dates[i], self.net_annual_interest_rate, self.balances_at_settle[i])
+            clean_price = calculate_clean_price(self.expected_dirty_prices[i], self.settle_dates[i], self.last_coupon_dates[i], self.net_annual_interest_rate)
             clean_prices.append(clean_price)
         np.testing.assert_array_almost_equal(clean_prices, self.expected_clean_prices)
 
