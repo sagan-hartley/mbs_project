@@ -4,6 +4,49 @@ from dateutil.relativedelta import relativedelta
 
 DISC_DAYS_IN_YEAR = 365.0
 
+def convert_to_datetime(date):
+    """
+    Convert a numpy.datetime64 object to a Python datetime object.
+
+    Parameters:
+    date (numpy.datetime64 or datetime): The date to be converted. 
+                                          If it is already a datetime object, it will be returned as-is.
+
+    Returns:
+    datetime: The corresponding datetime object if the input was a numpy.datetime64, 
+              otherwise returns the input unchanged.
+    """
+    # If the date is input as a numpy.datetime64 type, convert to datetime for relativedelta operations in the future
+    if isinstance(date, np.datetime64):
+        # Convert numpy.datetime64 to a datetime object
+        date_dt = date.astype(datetime)
+        # Combine the date with the minimum time to ensure it's a full datetime
+        date = datetime.combine(date_dt, datetime.min.time())  # Adds the HMS 00:00:00
+
+    return date
+
+def convert_to_datetime64_array(dates):
+    """
+    Convert an array of dates to the 'datetime64[D]' format if it is not already.
+
+    Parameters:
+    dates (array-like): An array of date values to be converted.
+
+    Returns:
+    numpy.ndarray: The input converted to a 'datetime64[D]' array if needed.
+    """
+    # Check if the input is a numpy array
+    if not isinstance(dates, np.ndarray):
+        # Convert the input to a numpy array if it isn't already
+        dates = np.array(dates)
+
+    # Check if the array dtype is not 'datetime64[D]'
+    if not np.issubdtype(dates.dtype, np.datetime64) or dates.dtype != 'datetime64[D]':
+        # Convert the array to 'datetime64[D]' if it isn't already
+        dates = np.array(dates, dtype='datetime64[D]')
+
+    return dates
+
 def get_ZCB_vector(payment_dates, rate_vals, rate_dates):
     """
     Calculate the discount factors for each payment date using a piecewise constant forward rate curve.
@@ -51,14 +94,9 @@ def get_ZCB_vector(payment_dates, rate_vals, rate_dates):
 
     # Define the market close date and convert rate_dates and payment_dates to numpy arrays for efficient operations
     # If inputs are datetime objects, convert them to type datetime64[D] for vectorization
-    if isinstance(rate_dates[0], datetime) or isinstance(payment_dates[0], datetime):
-        market_close_date = np.datetime64(rate_dates[0], 'D')
-        rate_dates = np.array(rate_dates, dtype = 'datetime64[D]')
-        payment_dates = np.array(payment_dates, dtype = 'datetime64[D]')
-    else:
-        market_close_date = rate_dates[0]
-        rate_dates = np.array(rate_dates)
-        payment_dates = np.array(payment_dates)
+    rate_dates = convert_to_datetime64_array(rate_dates)
+    payment_dates = convert_to_datetime64_array(payment_dates)
+    market_close_date = rate_dates[0]
 
     # Calculate time deltas (in years) from the first rate_date
     rate_time_deltas = (rate_dates - market_close_date).astype(float) / DISC_DAYS_IN_YEAR

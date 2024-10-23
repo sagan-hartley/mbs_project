@@ -4,13 +4,11 @@ from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 from utils import (
     DISC_DAYS_IN_YEAR,
+    convert_to_datetime,
     discount_cash_flows,
     get_ZCB_vector,
     days360
 )
-
-CASH_DAYS_IN_YEAR = 360
-PAR_BALANCE = 100
 
 def calculate_monthly_payment(principal, num_months, annual_interest_rate):
     """
@@ -48,21 +46,38 @@ def calculate_monthly_payment(principal, num_months, annual_interest_rate):
     
     return payment
 
-def calculate_scheduled_balances(principal, num_months, annual_interest_rate, monthly_payment):
+def calculate_scheduled_balances(principal, origination_date, num_months, annual_interest_rate, monthly_payment=None):
     """
     Calculate scheduled balances, principal paydowns, and interest paid using an exponential decay formula.
 
     Parameters:
     principal (float): Principal amount.
+    origination_date (datetime): The origination date of the MBS
     num_months (int): Number of months.
     annual_interest_rate (float): Annual interest rate (as a decimal).
-    monthly_payment (float): Monthly payment.
+    monthly_payment (float): Monthly payment. Default is None
 
     Returns:
-    tuple: (months, balances, principal_paydowns, interest_paid)
+    tuple: (months, accrual_dates, balances, principal_paydowns, interest_paid)
+
+    Raises:
+    ValueError: If 'origination date' does not occur on the first of the months
     """
+    # Make sure the origination date is converted to a datetime object if it isn't already
+    origination_date = convert_to_datetime(origination_date)
+
+    # Check if the origination date is on the first of the month, raise ValueError if not
+    if origination_date.day != 1:
+        raise ValueError("origination date is not the first of the month")
+    
+    # If the monthly payment is input as None calculate it here
+    monthly_payment = calculate_monthly_payment(principal, num_months, annual_interest_rate)
+
     # Create an array of months
     months = np.arange(num_months + 1)
+
+    # Create an array of accrual dates based on the origination date and number of months for the MBS
+    accrual_dates = [origination_date + relativedelta(months=i) for i in range(num_months + 1)]
 
     # Monthly interest rate
     r = annual_interest_rate / 12
@@ -87,53 +102,32 @@ def calculate_scheduled_balances(principal, num_months, annual_interest_rate, mo
     interest_paid = np.insert(interest_paid, 0, 0)
     principal_paydowns = np.insert(principal_paydowns, 0, 0)
 
-    return months, balances, principal_paydowns, interest_paid
+    return months, accrual_dates, balances, principal_paydowns, interest_paid
 
-def calculate_scheduled_balances_with_service_fee(principal, num_months, annual_interest_rate, monthly_payment, service_fee_rate):
+def calculate_actual_balances(schedule_balance_data, smms, net_annual_interest_rate, payment_delay_days=24):
     """
-    Calculate scheduled balances, principal paydowns, interest paid, and net interest paid with servicing fee
-    using the result from the calculate_scheduled_balances function.
-
-    Parameters:
-    principal (float): Principal amount.
-    num_months (int): Number of months.
-    annual_interest_rate (float): Annual interest rate (as a decimal).
-    monthly_payment (float): Monthly payment.
-    service_fee_rate (float): Service fee rate (as a decimal).
-
-    Returns:
-    tuple: (months, balances, principal_paydowns, interest_paid, net_interest_paid)
-    """
-    # Get results from calculate_scheduled_balances
-    months, balances, principal_paydowns, interest_paid = calculate_scheduled_balances(
-        principal, num_months, annual_interest_rate - service_fee_rate, monthly_payment
-    )
-
-    # Calculate net interest paid (interest paid minus servicing fee)
-    net_interest_paid = interest_paid - service_fee_rate
-    net_interest_paid[-1] = 0
-
-    return months, balances, principal_paydowns, interest_paid, net_interest_paid
-
-def calculate_balances_with_prepayment(schedule_balance_data, smms, net_annual_interest_rate):
-    """
-    Calculate scheduled and actual balances with prepayment using schedule balance data.
+    Calculate actual balances with prepayment using schedule balance data.
 
     Parameters:
     schedule_balance_data (tuple): Data returned from `calculate_scheduled_balances`, which includes:
         - months (array-like)
+        - accrual_dates (array-like)
         - scheduled_balances (array-like)
         - scheduled_principal_paydowns (array-like)
         - gross_interest_paid (array-like)
     smms (array-like): Single Monthly Mortality rates.
     net_annual_interest_rate (float): Net annual interest rate (as a decimal).
+    payment_delay_days (int): Delay in days before the first payment (default is 24).
 
     Returns:
-    tuple: (months, scheduled_balances, actual_balances, scheduled_principal_paydowns, actual_principal_paydowns, gross_interest_paid, net_interest_paid)
+    tuple: (months, accrual_dates, payment_dates, scheduled_balances, actual_balances, scheduled_principal_paydowns, actual_principal_paydowns, gross_interest_paid, net_interest_paid)
     """
     
     # Unpack the schedule_balance_data
-    months, scheduled_balances, scheduled_principal_paydowns, gross_interest_paid = schedule_balance_data
+    months, accrual_dates, scheduled_balances, scheduled_principal_paydowns, gross_interest_paid = schedule_balance_data
+
+    # Calculate the payment dates array from the accrual dates and the payment_delay_days parameter
+    payment_dates = accrual_dates + np.ones_like(months)*timedelta(days=payment_delay_days)
     
     # Derive the number of months from the length of months
     num_months = len(months)
@@ -153,40 +147,9 @@ def calculate_balances_with_prepayment(schedule_balance_data, smms, net_annual_i
     net_interest_paid = actual_balances * net_annual_interest_rate / 12
     net_interest_paid = np.concatenate(([net_interest_paid[-1]], net_interest_paid[:-1]))
 
-    return months, scheduled_balances, actual_balances, scheduled_principal_paydowns, actual_principal_paydowns, gross_interest_paid, net_interest_paid
+    return months, accrual_dates, payment_dates, scheduled_balances, actual_balances, scheduled_principal_paydowns, actual_principal_paydowns, gross_interest_paid, net_interest_paid
 
-def calculate_balances_with_prepayment_and_dates(schedule_balance_data, smms, net_annual_interest_rate, accrual_dates, payment_delay_days=24):
-    """
-    Calculate balances with prepayment and payment dates.
-
-    Parameters:
-    schedule_balance_data (tuple): Data returned from `calculate_scheduled_balances`, which includes:
-        - months (array-like)
-        - scheduled_balances (array-like)
-        - scheduled_principal_paydowns (array-like)
-        - gross_interest_paid (array-like)
-    smms (array-like): Single Monthly Mortality rates.
-    net_annual_interest_rate (float): Net annual interest rate (as a decimal).
-    accrual_dates (array_like): A monthly grid of dates beginning with the date of loan origination.
-    payment_delay_days (int): Delay in days before the first payment (default is 24).
-
-    Returns:
-    tuple: (months, accrual_dates, payment_dates, scheduled_balances, actual_balances, scheduled_principal_paydowns, actual_principal_paydowns, interest_paid, net_interest_paid)
-    """
-    # Calculate balances with prepayment
-    months, scheduled_balances, actual_balances, scheduled_principal_paydowns, actual_principal_paydowns, interest_paid, net_interest_paid = calculate_balances_with_prepayment(
-        schedule_balance_data, smms, net_annual_interest_rate
-    )
-
-    # Calculate the payment dates considering the payment delay
-    if payment_delay_days != 0:
-        payment_dates = accrual_dates + np.ones_like(months)*timedelta(days=payment_delay_days)
-    else:
-        payment_dates = accrual_dates
-
-    return months, accrual_dates, payment_dates, scheduled_balances, actual_balances, scheduled_principal_paydowns, actual_principal_paydowns, interest_paid, net_interest_paid
-
-def calculate_weighted_average_life(df, reference_date, date_name='Accrual Date', payment_date_name='Payment Date', balance_name='Scheduled Balance', principal_name='Actual Principal Paydowns'):
+def calculate_weighted_average_life(df, reference_date, date_name='Accrual Date', payment_date_name='Payment Date', balance_name='Actual Balance', principal_name='Actual Principal Paydown'):
     """
     Calculate the Weighted Average Life (WAL) of a loan or security, excluding payments before the reference date.
 
@@ -196,7 +159,7 @@ def calculate_weighted_average_life(df, reference_date, date_name='Accrual Date'
     reference_date (datetime): The date from which the years to each payment date are calculated (usually the settlement or issue date).
     date_name (str): Column name for the accrual dates in the DataFrame. Defaults to 'Accrual Date'.
     paymentdate_name (str): Column name for the payment dates in the DataFrame. Defaults to 'Payment Date'.
-    balance_name (str): Column name for the outstanding balances in the DataFrame. Defaults to 'Scheduled Balance'.
+    balance_name (str): Column name for the outstanding balances in the DataFrame. Defaults to 'Actual Balance'.
     principal_name (str): Column name for the principal paydowns in the DataFrame. Defaults to 'Actual Principal Paydowns'.
 
     Returns:
@@ -232,7 +195,7 @@ def calculate_weighted_average_life(df, reference_date, date_name='Accrual Date'
 
     return wal
 
-def calculate_present_value(schedule, settle_date, rate_vals, rate_dates, principal_name='Actual Principal Paydowns', net_interest_name='Net Interest Paid', date_name = 'Accrual Date', payment_date_name='Payment Date'):
+def calculate_present_value(schedule, settle_date, rate_vals, rate_dates, principal_name='Actual Principal Paydown', net_interest_name='Net Interest Paid', date_name = 'Accrual Date', payment_date_name='Payment Date'):
     """
     Calculate the present value of cash flows by discounting them with corresponding zero-coupon bond rates.
 
@@ -270,42 +233,105 @@ def calculate_present_value(schedule, settle_date, rate_vals, rate_dates, princi
 
     return present_value
 
-def calculate_dirty_price(present_value, balance_at_settle):
+def calculate_dirty_price(present_value, balance_at_settle, par_balance=100):
     """
     Calculate the dirty price of a bond.
 
     Parameters:
     present_value (float): The present value of the bond.
     balance_at_settle (float): The balance at settlement.
+    par_balance (float, optional): The par value or principal balance of the bond. Defaults to 100.
 
     Returns:
     float: The dirty price of the bond.
+    
+    Raises:
+    ValueError: If the present value is non-zero and the balance at settle is zero.
     """
-    # Use the par balance to normalize the price
-    dirty_price = present_value * PAR_BALANCE / balance_at_settle
+    # Check for the edge case where both the present value and balance at settle are zero
+    # In this case return 0 as to avoid division by zero
+    if present_value == 0 and balance_at_settle == 0:
+        return 0
+    
+    if present_value != 0 and balance_at_settle == 0:
+        raise ValueError("The present value should be zero if the balance at settle is zero")
+    else:
+        # Calculate the dirty price by normalizing the present value by the balance at settlement
+        dirty_price = present_value * par_balance / balance_at_settle
 
     return dirty_price
 
-def calculate_clean_price(dirty_price, settle_date, last_coupon_date, annual_interest_rate):
+def calculate_clean_price(dirty_price, settle_date, last_coupon_date, annual_interest_rate, cash_days_in_year=360, par_balance=100):
     """
     Calculate the clean price of a bond.
 
     Parameters:
     dirty_price (float): The dirty price of the bond.
-    settle_date (datetime): Settlement date.
+    settle_date (datetime): Settlement date of the bond.
     last_coupon_date (datetime): The date of the last coupon payment.
-    annual_interest_rate (float): Annual interest rate (as a decimal).
+    annual_interest_rate (float): Annual interest rate (as a decimal, e.g., 0.05 for 5%).
+    cash_days_in_year (int): Number of days in a year used for interest calculation. Default is 360.
+    par_balance (float, optional): Par value or principal balance of the bond. Defaults to 100.
 
     Returns:
     float: The clean price of the bond.
     """
-    # Calculate the days between the settle and last coupon date
+    # Calculate the number of days between the last coupon and settlement date
     days_between = days360(last_coupon_date, settle_date)
     
     # Calculate the accrued interest
-    accrued_interest = (annual_interest_rate / CASH_DAYS_IN_YEAR) * days_between * PAR_BALANCE
+    accrued_interest = (annual_interest_rate / cash_days_in_year) * days_between * par_balance
     
-    # Calculate the clean price
+    # Calculate the clean price by subtracting accrued interest from the dirty price
     clean_price = dirty_price - accrued_interest
 
     return clean_price
+
+def evaluate_cash_flows(actual_balance_data, settle_date, net_annual_interest_rate, rate_vals, rate_dates):
+    """
+    Evaluates cash flows for an MBS, calculating the weighted average life (WAL), present value, and clean price.
+
+    Parameters:
+    actual_balance_data (list): A list of actual balance data, including months, accrual dates, payment dates, scheduled balances, actual balances, scheduled principal paydowns, actual principal paydowns, gross interest paid, and net interest paid
+    settle_date (datetime): The settle date of the bond.
+    net_annual_interest_rate (float): The net annual interest rate.
+    rate_vals (ndarray): Forward rate values for discounting.
+    rate_dates (ndarray): Corresponding rate dates for forward rates.
+
+    Returns:
+    tuple: Weighted average life (WAL), present value of cash flows, and clean price.
+    """
+    # Convert actual_balance_data into a pandas DataFrame for easier manipulation
+    actual_balance_df = pd.DataFrame(list(zip(*actual_balance_data)), columns=[
+        'Month', 
+        'Accrual Date', 
+        'Payment Date', 
+        'Scheduled Balance', 
+        'Actual Balance', 
+        'Scheduled Principal Paydowns', 
+        'Actual Principal Paydowns', 
+        'Interest Paid', 
+        'Net Interest Paid'
+    ])
+
+    # Calculate the weighted average life (WAL) using the 'Actual Balance' column
+    wal = calculate_weighted_average_life(actual_balance_df, settle_date)
+
+    # Calculate the present value of cash flows using the forward curve
+    present_value = calculate_present_value(actual_balance_df, settle_date, rate_vals, rate_dates)
+
+    # Use the DataFrame to find the balance at settle date
+    dates = actual_balance_df['Accrual Date']
+    settle_loc = np.searchsorted(dates, settle_date, side='right') - 1
+    balance_at_settle = actual_balance_df.loc[settle_loc, 'Actual Balance']
+
+    # Calculate the dirty price from the present value
+    dirty_price = calculate_dirty_price(present_value, balance_at_settle)
+
+    # Find the last coupon date before the settle date
+    last_coupon_date = actual_balance_df.loc[settle_loc, 'Accrual Date']
+
+    # Calculate the clean price from the dirty price and net annual interest rate
+    clean_price = calculate_clean_price(dirty_price, settle_date, last_coupon_date, net_annual_interest_rate)
+
+    return wal, present_value, clean_price

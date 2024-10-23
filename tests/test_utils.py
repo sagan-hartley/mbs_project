@@ -4,11 +4,57 @@ from dateutil.relativedelta import relativedelta
 import numpy as np
 import pytest
 from utils import ( 
+    convert_to_datetime,
+    convert_to_datetime64_array,
     get_ZCB_vector,
     discount_cash_flows,
     create_fine_dates_grid,
     days360
 )
+
+class TestConvertToDatetime(unittest.TestCase):
+    
+    def test_convert_numpy_datetime64(self):
+        """Test conversion from numpy.datetime64 to datetime."""
+        np_date = np.datetime64('2024-10-23')
+        expected = datetime(2024, 10, 23, 0, 0)
+        result = convert_to_datetime(np_date)
+        self.assertEqual(result, expected)
+
+    def test_already_datetime(self):
+        """Test that an existing datetime object is returned unchanged."""
+        existing_date = datetime(2024, 10, 23)
+        result = convert_to_datetime(existing_date)
+        self.assertEqual(result, existing_date)
+
+class TestConvertToDatetime64Array(unittest.TestCase):
+
+    def test_array_already_datetime64(self):
+        """Test when input array is already 'datetime64[D]'"""
+        dates = np.array(['2024-01-01', '2024-02-01'], dtype='datetime64[D]')
+        result = convert_to_datetime64_array(dates)
+        # Assert that the result is still 'datetime64[D]'
+        self.assertTrue(np.issubdtype(result.dtype, np.datetime64))
+        self.assertEqual(result.dtype, 'datetime64[D]')
+        np.testing.assert_array_equal(result, dates)
+
+    def test_array_string_dates(self):
+        """Test conversion from string array to 'datetime64[D]'"""
+        dates = ['2024-01-01', '2024-02-01']
+        result = convert_to_datetime64_array(dates)
+        expected = np.array(['2024-01-01', '2024-02-01'], dtype='datetime64[D]')
+        # Assert the conversion and dtype
+        self.assertTrue(np.issubdtype(result.dtype, np.datetime64))
+        self.assertEqual(result.dtype, 'datetime64[D]')
+        np.testing.assert_array_equal(result, expected)
+
+    def test_empty_array(self):
+        """Test the case where the array is empty"""
+        dates = np.array([], dtype='datetime64[D]')
+        result = convert_to_datetime64_array(dates)
+        # Assert that the result is still an empty array of dtype 'datetime64[D]'
+        self.assertEqual(result.size, 0)
+        self.assertEqual(result.dtype, 'datetime64[D]')
 
 class TestGetZCBVector(unittest.TestCase):
     """

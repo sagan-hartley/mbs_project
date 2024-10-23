@@ -1,6 +1,7 @@
 import numpy as np
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
+from utils import convert_to_datetime
 
 def calculate_pccs(short_rates, spread=0.04):
     """
@@ -36,11 +37,9 @@ def calculate_smms(pccs, coupon, market_close_date, settle_date, num_months, alp
     if len(pccs[0]) < num_months:
         raise ValueError("Length of PCCs is less than the specified number of months.")
     
-     # Convert to datetime if the dates are input as a numpy datetime64 object
-    if isinstance(market_close_date, np.datetime64):
-        market_close_date = market_close_date.astype(datetime)
-    if isinstance(settle_date, np.datetime64):
-        settle_date = settle_date.astype(datetime)
+    # Convert to datetime if the market close and settle dates are input as a numpy datetime64 object
+    market_close_date = convert_to_datetime(market_close_date)
+    settle_date = convert_to_datetime(settle_date)
 
     # calculate the total number of months between the market close date and the settle date
     delta = relativedelta(settle_date, market_close_date)

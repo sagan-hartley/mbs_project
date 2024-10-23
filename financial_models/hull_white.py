@@ -1,23 +1,22 @@
 import numpy as np
 from datetime import datetime
-from scipy.optimize import minimize
 from utils import (
-    discount_cash_flows,
+    convert_to_datetime64_array,
     DISC_DAYS_IN_YEAR
 )
 
-def calculate_theta(forward_curve, alpha, sigma, time_points):
+def calculate_theta(forward_curve, alpha, sigma, sim_short_rate_dates):
     """
-    Calculate the theta(t) term in the Hull-White model given a forward curve and return both the time points and theta.
+    Calculate the theta(t) term in the Hull-White model given a forward curve and return both the simulated short rate dates and theta.
     
     Parameters:
     - forward_curve (tuple) : A tuple containing dates and their corresponding forward rates (rate_dates, rate_vals).
     - alpha (float) : The mean-reversion rate (if 0, special case is handled).
     - sigma (float) : Volatility of the short rate.
-    - time_points (list) : Array of times to evaluate the forward curve.
+    - sim_short_rate_dates (list) : Array of dates for the Monte Carlo simulation.
     
     Returns:
-    - time_points (ndarray) : The time points where theta is evaluated.
+    - sim_short_rate_dates (ndarray) : The simulated short rate dates where theta is evaluated.
     - theta (ndarray): The drift term theta(t) at each time point.
     """
     rate_dates, rate_vals = forward_curve # Extract rate dates and values from the forward curve tuple
@@ -30,26 +29,18 @@ def calculate_theta(forward_curve, alpha, sigma, time_points):
     if len(rate_vals) == len(rate_dates) - 1:
         rate_vals = np.concatenate([rate_vals, [rate_vals[-1]]])
 
-    # Define the market close date and convert rate_dates and time_points to numpy arrays for efficient operations
+    # Define the market close date and convert rate_dates and sim_short_rate_dates to numpy arrays for efficient operations
     # If inputs are datetime objects, convert them to type datetime64[D] for vectorization
-    if isinstance(rate_dates[0], datetime):
-        market_close_date = np.datetime64(rate_dates[0], 'D')
-        rate_dates = np.array(rate_dates, dtype = 'datetime64[D]')
-    else:
-        market_close_date = rate_dates[0]
-        rate_dates = np.array(rate_dates)
+    rate_dates = convert_to_datetime64_array(rate_dates)
+    sim_short_rate_dates = convert_to_datetime64_array(sim_short_rate_dates)
+    market_close_date = rate_dates[0]
 
-    if isinstance(time_points[0], datetime):
-        time_points = np.array(time_points, dtype = 'datetime64[D]')
-    else:
-        time_points = np.array(time_points)
-
-    # Filter the time points array to ensure that only positive time point deltas remain
-    time_points = time_points[time_points >= market_close_date]
+    # Filter the simulated short rate dates array to ensure that only positive time point deltas remain
+    sim_short_rate_dates = sim_short_rate_dates[sim_short_rate_dates >= market_close_date]
 
     # calculate the time deltas for the forward curve and time point dates
     rate_time_deltas = (rate_dates - market_close_date).astype(float) / DISC_DAYS_IN_YEAR
-    time_point_deltas = (time_points - market_close_date).astype(float) / DISC_DAYS_IN_YEAR
+    time_point_deltas = (sim_short_rate_dates - market_close_date).astype(float) / DISC_DAYS_IN_YEAR
 
     # Use np.interp for linear interpolation of forward rates
     forward_rates = np.interp(time_point_deltas, rate_time_deltas, rate_vals)
@@ -64,8 +55,8 @@ def calculate_theta(forward_curve, alpha, sigma, time_points):
         # General case for alpha > 0
         theta = dfdt + alpha * forward_rates + (sigma**2 / (2 * alpha)) * (1 - np.exp(-2 * alpha * time_point_deltas))
     
-    # Return both time points and the corresponding theta values
-    return time_points, theta
+    # Return both simulated short rate dates and the corresponding theta values
+    return sim_short_rate_dates, theta
 
 def hull_white_simulate(alpha, sigma, theta, start_rate, iterations=1000, antithetic=True):
     """
@@ -89,8 +80,7 @@ def hull_white_simulate(alpha, sigma, theta, start_rate, iterations=1000, antith
     num_steps = len(dates)
 
     # If inputs are datetime objects, convert them to numpy datetime64[D] for vectorization 
-    if isinstance(dates[0], datetime):
-        dates = np.array(dates, dtype='datetime64[D]')
+    dates = convert_to_datetime64_array(dates)
     
     # Initialize array for storing all simulated short rate paths
     r_all = np.zeros((iterations, num_steps))

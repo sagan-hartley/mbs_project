@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
+from utils import convert_to_datetime
 
 PMTS_PER_YEAR = 2
 
@@ -45,9 +46,7 @@ def create_semi_bond_cash_flows(effective_date, balance, coupon, maturity_years)
         effective_date = datetime.strptime(effective_date, "%Y-%m-%d")
 
     # Convert effective date to a datetime object if it's a datetime64[D] object
-    if isinstance(effective_date, np.datetime64):
-        effective_date = effective_date.astype('datetime64[D]').tolist()
-        print(effective_date)
+    effective_date = convert_to_datetime(effective_date)
     
     # Die if the day of the month is greater than 28
     if effective_date.day > 28:
