@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from utils import (
+    convert_to_datetime,
     get_ZCB_vector
 )
 from financial_calculations.bond_cash_flows import (
@@ -38,8 +39,7 @@ def calculate_coupon_rate(start_date, maturity_years, forward_curve):
     market_close_date = disc_rate_dates[0]
 
     # If the market close date is input as a datetime64[D] type, convert to datetime to ensure compatibility with the forward curve data
-    if isinstance(market_close_date, np.datetime64): 
-        market_close_date = market_close_date.astype(datetime)
+    market_close_date = convert_to_datetime(market_close_date)
 
     # Validate start date
     if start_date < market_close_date:

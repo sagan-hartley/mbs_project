@@ -3,7 +3,7 @@ from datetime import datetime
 import numpy as np
 from financial_calculations.forward_curves import (
     bootstrap_forward_curve,
-    bootstrap_finer_forward_curve
+    calibrate_finer_forward_curve
 )
 
 class TestBootstrapForwardCurve(unittest.TestCase):
@@ -152,9 +152,9 @@ class TestBootstrapForwardCurve(unittest.TestCase):
             np.testing.assert_array_almost_equal(disc_rates1, disc_rates2)
 
 
-class TestBootstrapFinerForwardCurve(unittest.TestCase):
+class TestCalibrateFinerForwardCurve(unittest.TestCase):
     """
-    Unit test class for testing the `bootstrap_finer_forward_curve` function.
+    Unit test class for testing the `calibrate_finer_forward_curve` function.
 
     The tests include:
     - Basic functionality with different frequencies (monthly, weekly).
@@ -183,7 +183,7 @@ class TestBootstrapFinerForwardCurve(unittest.TestCase):
         This verifies that the number of dates and rates returned is correct,
         and that the disc rates are within the expected range.
         """
-        disc_rate_dates, disc_rates = bootstrap_finer_forward_curve(
+        disc_rate_dates, disc_rates = calibrate_finer_forward_curve(
             self.cmt_data, self.market_close_date, self.balance, frequency='monthly'
         )
         
@@ -201,7 +201,7 @@ class TestBootstrapFinerForwardCurve(unittest.TestCase):
         This verifies that the number of dates and rates returned is correct,
         and that the disc rates are within the expected range.
         """
-        disc_rate_dates, disc_rates = bootstrap_finer_forward_curve(
+        disc_rate_dates, disc_rates = calibrate_finer_forward_curve(
             self.cmt_data, self.market_close_date, self.balance, frequency='weekly'
         )
         
@@ -217,7 +217,7 @@ class TestBootstrapFinerForwardCurve(unittest.TestCase):
         This ensures that the function raises a ValueError for unsupported frequencies.
         """
         with self.assertRaises(ValueError):
-            bootstrap_finer_forward_curve(self.cmt_data, self.market_close_date, self.balance, frequency='daily')
+            calibrate_finer_forward_curve(self.cmt_data, self.market_close_date, self.balance, frequency='daily')
 
     def test_datetime64_market_close_date(self):
         """
@@ -226,7 +226,7 @@ class TestBootstrapFinerForwardCurve(unittest.TestCase):
         This ensures that the function handles numpy datetime64 dates correctly.
         """
         market_close_date_np = np.datetime64('2024-08-10')
-        disc_rate_dates, disc_rates = bootstrap_finer_forward_curve(
+        disc_rate_dates, disc_rates = calibrate_finer_forward_curve(
             self.cmt_data, market_close_date_np, self.balance, frequency='monthly'
         )
         

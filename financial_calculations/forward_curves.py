@@ -4,8 +4,9 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from scipy.optimize import minimize
 from utils import (
+    convert_to_datetime,
     discount_cash_flows,
-    create_fine_dates_grid
+    create_fine_dates_grid,
 )
 from financial_calculations.bond_cash_flows import (
     create_semi_bond_cash_flows
@@ -41,10 +42,7 @@ def bootstrap_forward_curve(cmt_data, market_close_date, balance, initial_guess=
     """
 
     # If the market close date is input as a datetime64[D] type, convert to datetime for relativedelta operations in the future
-    if isinstance(market_close_date, np.datetime64): 
-        market_close_date_dt = market_close_date.astype(datetime)
-        market_close_date = datetime.combine(market_close_date_dt, datetime.min.time()) # This adds the HMS 00:00:00 to the datetime object 
-            # which makes it identical to a datetime object initialized with the month, day, and year of the given numpy datetime64[D]
+    market_close_date = convert_to_datetime(market_close_date)
         
     disc_rate_dates = np.array([market_close_date])
     disc_rates = np.array([])
@@ -74,9 +72,9 @@ def bootstrap_forward_curve(cmt_data, market_close_date, balance, initial_guess=
     
     return disc_rate_dates, disc_rates
 
-def bootstrap_finer_forward_curve(cmt_data, market_close_date, balance, frequency='monthly', initial_guess=0.04, smoothing_error_weight=100.0):
+def calibrate_finer_forward_curve(cmt_data, market_close_date, balance, frequency='monthly', initial_guess=0.04, smoothing_error_weight=100.0):
     """
-    Bootstraps a finer forward curve using a specified grid frequency (monthly/weekly).
+    Calibrates a finer forward curve using a specified grid frequency (monthly/weekly).
     This method penalizes large rate jumps to ensure smoother transitions between rates.
 
     Parameters:
@@ -110,9 +108,7 @@ def bootstrap_finer_forward_curve(cmt_data, market_close_date, balance, frequenc
     """
 
     # If market_close_date is numpy datetime64, convert to datetime for use with relativedelta
-    if isinstance(market_close_date, np.datetime64): 
-        market_close_date_dt = market_close_date.astype(datetime)
-        market_close_date = datetime.combine(market_close_date_dt, datetime.min.time())  # Ensure time is set to 00:00:00
+    market_close_date = convert_to_datetime(market_close_date)
 
     # Create a finer grid of dates (monthly/weekly) up to the longest bond maturity
     disc_rate_dates = create_fine_dates_grid(market_close_date, cmt_data[-1][0], frequency)
@@ -140,9 +136,10 @@ def bootstrap_finer_forward_curve(cmt_data, market_close_date, balance, frequenc
 
     # Minimize the objective function using L-BFGS-B method
     # x0 is the initial guess for the disc rate, bounds ensure rates remain between 0 and 1
-    result = minimize(objective, x0=np.ones(len(disc_rate_dates))*initial_guess, 
+    rates_length = len(disc_rate_dates)
+    result = minimize(objective, x0=np.ones(rates_length)*initial_guess, 
                           method='L-BFGS-B', bounds=[(0, 1)], 
-                          options={'ftol': balance * 1e-7})
+                          options={'ftol': balance * rates_length * 1e-7})
 
     # If the optimization converges, append the found rate to the disc rates array
     if result.success:
