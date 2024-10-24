@@ -9,6 +9,7 @@ from utils import (
     get_ZCB_vector,
     discount_cash_flows,
     create_fine_dates_grid,
+    step_interpolate,
     days360
 )
 
@@ -265,6 +266,70 @@ class TestCreateFineDatesGrid(unittest.TestCase):
         maturity_years = 1
         with self.assertRaises(ValueError):
             create_fine_dates_grid(market_close_date, maturity_years, 'daily')  # Invalid interval type
+
+class TestStepInterpolate(unittest.TestCase):
+
+    def test_exact_matches(self):
+        """Test that the function returns correct rates for exact matches."""
+        dates_step = np.array(['2024-01-01', '2024-06-01', '2024-12-01'], dtype='datetime64[D]')
+        rates = np.array([0.02, 0.03, 0.04])
+        query_dates = np.array(['2024-01-01', '2024-06-01', '2024-12-01'], dtype='datetime64[D]')
+        expected = np.array([0.02, 0.03, 0.04])
+        result = step_interpolate(dates_step, rates, query_dates)
+        np.testing.assert_array_equal(result, expected)
+
+    def test_dates_between_steps(self):
+        """Test that the function returns the previous step rate for dates between step changes."""
+        dates_step = np.array(['2024-01-01', '2024-06-01', '2024-12-01'], dtype='datetime64[D]')
+        rates = np.array([0.02, 0.03, 0.04])
+        query_dates = np.array(['2024-04-01', '2024-09-01'], dtype='datetime64[D]')
+        expected = np.array([0.02, 0.03])  # Should return rate of the prior step
+        result = step_interpolate(dates_step, rates, query_dates)
+        np.testing.assert_array_equal(result, expected)
+
+    def test_query_dates_before_first_step(self):
+        """Test that dates before the first step return the rate of the first step."""
+        dates_step = np.array(['2024-01-01', '2024-06-01', '2024-12-01'], dtype='datetime64[D]')
+        rates = np.array([0.02, 0.03, 0.04])
+        query_dates = np.array(['2023-12-01'], dtype='datetime64[D]')
+        expected = np.array([0.02])  # Should return the rate of the first step
+        result = step_interpolate(dates_step, rates, query_dates)
+        np.testing.assert_array_equal(result, expected)
+
+    def test_query_dates_after_last_step(self):
+        """Test that dates after the last step return the rate of the last step."""
+        dates_step = np.array(['2024-01-01', '2024-06-01', '2024-12-01'], dtype='datetime64[D]')
+        rates = np.array([0.02, 0.03, 0.04])
+        query_dates = np.array(['2025-01-01'], dtype='datetime64[D]')
+        expected = np.array([0.04])  # Should return the rate of the last step
+        result = step_interpolate(dates_step, rates, query_dates)
+        np.testing.assert_array_equal(result, expected)
+
+    def test_empty_query_dates(self):
+        """Test that an empty query dates array returns an empty array."""
+        dates_step = np.array(['2024-01-01', '2024-06-01', '2024-12-01'], dtype='datetime64[D]')
+        rates = np.array([0.02, 0.03, 0.04])
+        query_dates = np.array([], dtype='datetime64[D]')
+        expected = np.array([], dtype='float64')
+        result = step_interpolate(dates_step, rates, query_dates)
+        np.testing.assert_array_equal(result, expected)
+
+    def test_single_rate_single_step(self):
+        """Test that a single step and rate works as expected."""
+        dates_step = np.array(['2024-01-01'], dtype='datetime64[D]')
+        rates = np.array([0.02])
+        query_dates = np.array(['2024-01-01', '2025-01-01'], dtype='datetime64[D]')
+        expected = np.array([0.02, 0.02])  # Same rate for all query dates
+        result = step_interpolate(dates_step, rates, query_dates)
+        np.testing.assert_array_equal(result, expected)
+
+    def test_non_sorted_dates(self):
+        """Test that the function raises an error if dates_step is not sorted."""
+        dates_step = np.array(['2024-06-01', '2024-01-01'], dtype='datetime64[D]')  # Unsorted
+        rates = np.array([0.03, 0.02])
+        query_dates = np.array(['2024-04-01'], dtype='datetime64[D]')
+        with self.assertRaises(ValueError):
+            step_interpolate(dates_step, rates, query_dates)
 
 class TestDays360(unittest.TestCase):
     def test_same_month(self):

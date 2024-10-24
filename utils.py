@@ -162,7 +162,7 @@ def discount_cash_flows(payment_dates, cash_flows, discount_rate_vals, discount_
 
     return present_value
 
-def create_fine_dates_grid(market_close_date, maturity_years: int, interval_type='monthly'):
+def create_fine_dates_grid(market_close_date, maturity_years, interval_type='monthly'):
     """
     Create a finer grid of dates (monthly or weekly) from the market close date 
     to the bond maturity date.
@@ -171,7 +171,7 @@ def create_fine_dates_grid(market_close_date, maturity_years: int, interval_type
     -----------
     market_close_date : datetime
         The market close date (start date for the grid).
-    maturity_years : int
+    maturity_years : float
         The number of years until bond maturity.
     interval_type : str
         The interval for the grid, either 'monthly' or 'weekly'.
@@ -202,6 +202,38 @@ def create_fine_dates_grid(market_close_date, maturity_years: int, interval_type
     
     # Convert the list to a numpy array
     return np.array(dates_grid)
+
+def step_interpolate(dates_step, rates, query_dates):
+    """
+    Perform step interpolation to find rates corresponding to the query_dates.
+    
+    Parameters:
+    - dates_step (array-like): Array of dates representing the step function's change points (must be sorted).
+    - rates (array-like): Array of rates associated with each date in dates_step.
+    - query_dates (array-like): Array of dates for which to find the associated rates.
+
+    Returns:
+    - interpolated_rates: Array of rates corresponding to the query_dates.
+    """
+    # Ensure inputs are numpy arrays, converting datetime objects to numpy datetime64
+    dates_step = np.array(dates_step, dtype='datetime64[D]')
+    rates = np.array(rates)
+    query_dates = np.array(query_dates, dtype='datetime64[D]')
+
+    # Check if dates_step is sorted
+    if not np.all(np.diff(dates_step) >= np.timedelta64(0)):
+        raise ValueError("dates_step must be sorted in ascending order.")
+
+    # Use searchsorted to find indices of the step dates less than or equal to query dates
+    indices = np.searchsorted(dates_step, query_dates, side='right') - 1
+
+    # Ensure that indices do not go out of bounds (for dates earlier than the first date in step)
+    indices = np.clip(indices, 0, len(dates_step) - 1)
+
+    # Return the corresponding rates
+    interpolated_rates = rates[indices]
+    
+    return interpolated_rates
 
 def days360(d1, d2):
     """

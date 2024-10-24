@@ -7,7 +7,8 @@ from utils import (
     convert_to_datetime,
     discount_cash_flows,
     get_ZCB_vector,
-    days360
+    days360,
+    create_fine_dates_grid
 )
 
 def calculate_monthly_payment(principal, num_months, annual_interest_rate):
@@ -77,7 +78,7 @@ def calculate_scheduled_balances(principal, origination_date, num_months, annual
     months = np.arange(num_months + 1)
 
     # Create an array of accrual dates based on the origination date and number of months for the MBS
-    accrual_dates = [origination_date + relativedelta(months=i) for i in range(num_months + 1)]
+    accrual_dates = create_fine_dates_grid(origination_date, num_months/12)
 
     # Monthly interest rate
     r = annual_interest_rate / 12
@@ -248,13 +249,10 @@ def calculate_dirty_price(present_value, balance_at_settle, par_balance=100):
     Raises:
     ValueError: If the present value is non-zero and the balance at settle is zero.
     """
-    # Check for the edge case where both the present value and balance at settle are zero
+    # Check for the edge case where the balance at settle is zero
     # In this case return 0 as to avoid division by zero
-    if present_value == 0 and balance_at_settle == 0:
+    if balance_at_settle == 0:
         return 0
-    
-    if present_value != 0 and balance_at_settle == 0:
-        raise ValueError("The present value should be zero if the balance at settle is zero")
     else:
         # Calculate the dirty price by normalizing the present value by the balance at settlement
         dirty_price = present_value * par_balance / balance_at_settle
