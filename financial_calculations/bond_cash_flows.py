@@ -40,12 +40,8 @@ def create_semi_bond_cash_flows(effective_date, balance, coupon, maturity_years)
     # Ensure the coupon is in decimal and not a percentage
     if coupon > 1:
         raise ValueError("Coupon should not be greater than 1 as it should be a decimal and not a percentage.")
-    
-    # Convert effective date to a datetime object if it's a string
-    if isinstance(effective_date, str):
-        effective_date = datetime.strptime(effective_date, "%Y-%m-%d")
 
-    # Convert effective date to a datetime object if it's a datetime64[D] object
+    # Convert effective date to a datetime object if it's not already
     effective_date = convert_to_datetime(effective_date)
     
     # Die if the day of the month is greater than 28

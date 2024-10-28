@@ -14,19 +14,33 @@ from utils import (
 )
 
 class TestConvertToDatetime(unittest.TestCase):
-    
-    def test_convert_numpy_datetime64(self):
-        """Test conversion from numpy.datetime64 to datetime."""
-        np_date = np.datetime64('2024-10-23')
-        expected = datetime(2024, 10, 23, 0, 0)
-        result = convert_to_datetime(np_date)
-        self.assertEqual(result, expected)
 
-    def test_already_datetime(self):
-        """Test that an existing datetime object is returned unchanged."""
-        existing_date = datetime(2024, 10, 23)
-        result = convert_to_datetime(existing_date)
-        self.assertEqual(result, existing_date)
+    def test_string_to_datetime(self):
+        """Test conversion from string to datetime"""
+        input_date = "12/25/2024"
+        expected_output = datetime(2024, 12, 25)
+        self.assertEqual(convert_to_datetime(input_date), expected_output)
+
+    def test_np_datetime64_to_datetime(self):
+        """Test conversion from numpy.datetime64 to datetime"""
+        input_date = np.datetime64('2024-12-25')
+        expected_output = datetime(2024, 12, 25)
+        self.assertEqual(convert_to_datetime(input_date), expected_output)
+
+    def test_datetime_to_datetime(self):
+        """Test passing a datetime object (should return the same object)"""
+        input_date = datetime(2024, 12, 25)
+        self.assertEqual(convert_to_datetime(input_date), input_date)
+
+    def test_invalid_input(self):
+        """Test raising an error for an unsupported input type"""
+        with self.assertRaises(ValueError):
+            convert_to_datetime(123)  # Invalid type, should raise ValueError
+
+    def test_string_format_invalid(self):
+        """Test error handling for incorrect date string format"""
+        with self.assertRaises(ValueError):
+            convert_to_datetime("2024/25/12")  # Wrong format
 
 class TestConvertToDatetime64Array(unittest.TestCase):
 
@@ -268,70 +282,72 @@ class TestCreateFineDatesGrid(unittest.TestCase):
             create_fine_dates_grid(market_close_date, maturity_years, 'daily')  # Invalid interval type
 
 class TestStepInterpolate(unittest.TestCase):
+    """
+    Unit tests for the step_interpolate function.
+    """
 
-    def test_exact_matches(self):
-        """Test that the function returns correct rates for exact matches."""
+    def test_basic_interpolation(self):
+        """Basic case where the query dates fall within the range of dates_step"""
         dates_step = np.array(['2024-01-01', '2024-06-01', '2024-12-01'], dtype='datetime64[D]')
         rates = np.array([0.02, 0.03, 0.04])
-        query_dates = np.array(['2024-01-01', '2024-06-01', '2024-12-01'], dtype='datetime64[D]')
-        expected = np.array([0.02, 0.03, 0.04])
+        query_dates = np.array(['2024-02-01', '2024-07-01'], dtype='datetime64[D]')
+        
+        expected_rates = np.array([0.02, 0.03])  # Expected rates for the query dates
         result = step_interpolate(dates_step, rates, query_dates)
-        np.testing.assert_array_equal(result, expected)
+        np.testing.assert_array_equal(result, expected_rates)
 
-    def test_dates_between_steps(self):
-        """Test that the function returns the previous step rate for dates between step changes."""
-        dates_step = np.array(['2024-01-01', '2024-06-01', '2024-12-01'], dtype='datetime64[D]')
-        rates = np.array([0.02, 0.03, 0.04])
-        query_dates = np.array(['2024-04-01', '2024-09-01'], dtype='datetime64[D]')
-        expected = np.array([0.02, 0.03])  # Should return rate of the prior step
-        result = step_interpolate(dates_step, rates, query_dates)
-        np.testing.assert_array_equal(result, expected)
+    def test_unsorted_dates_step(self):
+        """Test for unsorted dates_step (should raise ValueError)"""
+        dates_step = np.array(['2024-06-01', '2024-01-01', '2024-12-01'], dtype='datetime64[D]')
+        rates = np.array([0.03, 0.02, 0.04])
+        query_dates = np.array(['2024-02-01', '2024-07-01'], dtype='datetime64[D]')
 
-    def test_query_dates_before_first_step(self):
-        """Test that dates before the first step return the rate of the first step."""
-        dates_step = np.array(['2024-01-01', '2024-06-01', '2024-12-01'], dtype='datetime64[D]')
-        rates = np.array([0.02, 0.03, 0.04])
-        query_dates = np.array(['2023-12-01'], dtype='datetime64[D]')
-        expected = np.array([0.02])  # Should return the rate of the first step
-        result = step_interpolate(dates_step, rates, query_dates)
-        np.testing.assert_array_equal(result, expected)
-
-    def test_query_dates_after_last_step(self):
-        """Test that dates after the last step return the rate of the last step."""
-        dates_step = np.array(['2024-01-01', '2024-06-01', '2024-12-01'], dtype='datetime64[D]')
-        rates = np.array([0.02, 0.03, 0.04])
-        query_dates = np.array(['2025-01-01'], dtype='datetime64[D]')
-        expected = np.array([0.04])  # Should return the rate of the last step
-        result = step_interpolate(dates_step, rates, query_dates)
-        np.testing.assert_array_equal(result, expected)
-
-    def test_empty_query_dates(self):
-        """Test that an empty query dates array returns an empty array."""
-        dates_step = np.array(['2024-01-01', '2024-06-01', '2024-12-01'], dtype='datetime64[D]')
-        rates = np.array([0.02, 0.03, 0.04])
-        query_dates = np.array([], dtype='datetime64[D]')
-        expected = np.array([], dtype='float64')
-        result = step_interpolate(dates_step, rates, query_dates)
-        np.testing.assert_array_equal(result, expected)
-
-    def test_single_rate_single_step(self):
-        """Test that a single step and rate works as expected."""
-        dates_step = np.array(['2024-01-01'], dtype='datetime64[D]')
-        rates = np.array([0.02])
-        query_dates = np.array(['2024-01-01', '2025-01-01'], dtype='datetime64[D]')
-        expected = np.array([0.02, 0.02])  # Same rate for all query dates
-        result = step_interpolate(dates_step, rates, query_dates)
-        np.testing.assert_array_equal(result, expected)
-
-    def test_non_sorted_dates(self):
-        """Test that the function raises an error if dates_step is not sorted."""
-        dates_step = np.array(['2024-06-01', '2024-01-01'], dtype='datetime64[D]')  # Unsorted
-        rates = np.array([0.03, 0.02])
-        query_dates = np.array(['2024-04-01'], dtype='datetime64[D]')
         with self.assertRaises(ValueError):
             step_interpolate(dates_step, rates, query_dates)
 
+    def test_duplicate_dates_step(self):
+        """Test for duplicate values contained in dates_step (should raise ValueError)"""
+        dates_step = np.array(['2024-06-01', '2025-01-01', '2025-01-01'], dtype='datetime64[D]')
+        rates = np.array([0.03, 0.02, 0.04])
+        query_dates = np.array(['2024-02-01', '2024-07-01'], dtype='datetime64[D]')
+
+        with self.assertRaises(ValueError):
+            step_interpolate(dates_step, rates, query_dates)
+
+    def test_query_date_before_first_date(self):
+        """Test for query dates that are before the first element in dates_step"""
+        dates_step = np.array(['2024-01-01', '2024-06-01', '2024-12-01'], dtype='datetime64[D]')
+        rates = np.array([0.02, 0.03, 0.04])
+        query_dates = np.array(['2023-12-01'], dtype='datetime64[D]')
+
+        with self.assertRaises(ValueError):
+            step_interpolate(dates_step, rates, query_dates)
+
+    def test_query_date_equal_to_step_dates(self):
+        """Test for query dates that exactly match dates in dates_step"""
+        dates_step = np.array(['2024-01-01', '2024-06-01', '2024-12-01'], dtype='datetime64[D]')
+        rates = np.array([0.02, 0.03, 0.04])
+        query_dates = np.array(['2024-01-01', '2024-12-01'], dtype='datetime64[D]')
+
+        expected_rates = np.array([0.02, 0.04])  # Expected rates
+        result = step_interpolate(dates_step, rates, query_dates)
+        np.testing.assert_array_equal(result, expected_rates)
+
+    def test_query_dates_after_last_step_date(self):
+        """Test for query dates that are after the last element in dates_step"""
+        dates_step = np.array(['2024-01-01', '2024-06-01', '2024-12-01'], dtype='datetime64[D]')
+        rates = np.array([0.02, 0.03, 0.04])
+        query_dates = np.array(['2025-01-01'], dtype='datetime64[D]')
+
+        expected_rates = np.array([0.04])  # Should take the last rate
+        result = step_interpolate(dates_step, rates, query_dates)
+        np.testing.assert_array_equal(result, expected_rates)
+
 class TestDays360(unittest.TestCase):
+    """
+    Unit tests for the days360 function.
+    """
+
     def test_same_month(self):
         """Test case where both dates are in the same month."""
         d1 = datetime(2024, 10, 1)

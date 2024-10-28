@@ -6,24 +6,32 @@ DISC_DAYS_IN_YEAR = 365.0
 
 def convert_to_datetime(date):
     """
-    Convert a numpy.datetime64 object to a Python datetime object.
+    Convert a string, numpy.datetime64, or datetime object to a Python datetime object.
 
     Parameters:
-    date (numpy.datetime64 or datetime): The date to be converted. 
-                                          If it is already a datetime object, it will be returned as-is.
+    - date (str, numpy.datetime64, or datetime): The date to be converted. 
+                                                 If it is already a datetime object, it will be returned as-is.
 
     Returns:
-    datetime: The corresponding datetime object if the input was a numpy.datetime64, 
-              otherwise returns the input unchanged.
+    - datetime: The corresponding datetime object.
+    
+    Raises:
+    - ValueError: If the input type cannot be converted to datetime.
     """
-    # If the date is input as a numpy.datetime64 type, convert to datetime for relativedelta operations in the future
-    if isinstance(date, np.datetime64):
+    if isinstance(date, str):
+        # Convert a string to datetime, assuming a specific format (e.g., mm/dd/yyyy)
+        return datetime.strptime(date, "%m/%d/%Y")
+    elif isinstance(date, np.datetime64):
         # Convert numpy.datetime64 to a datetime object
         date_dt = date.astype(datetime)
         # Combine the date with the minimum time to ensure it's a full datetime
         date = datetime.combine(date_dt, datetime.min.time())  # Adds the HMS 00:00:00
-
-    return date
+        return date
+    elif isinstance(date, datetime):
+        # Return the input if it's already a datetime object
+        return date
+    else:
+        raise ValueError("Input type could not be converted to datetime")
 
 def convert_to_datetime64_array(dates):
     """
@@ -214,21 +222,27 @@ def step_interpolate(dates_step, rates, query_dates):
 
     Returns:
     - interpolated_rates: Array of rates corresponding to the query_dates.
+
+    Raises:
+    - ValueError: 
+        If there are duplicated dates in dates_step
+        If dates_step is not sorted in ascending order
+        If any query date is before the first element in dates_step
     """
     # Ensure inputs are numpy arrays, converting datetime objects to numpy datetime64
     dates_step = np.array(dates_step, dtype='datetime64[D]')
     rates = np.array(rates)
     query_dates = np.array(query_dates, dtype='datetime64[D]')
 
-    # Check if dates_step is sorted
-    if not np.all(np.diff(dates_step) >= np.timedelta64(0)):
-        raise ValueError("dates_step must be sorted in ascending order.")
+    # Check if dates_step is sorted and that there are no duplicate dates
+    if not np.all(np.diff(dates_step) > np.timedelta64(0)):
+        raise ValueError("dates_step must be sorted in ascending order without duplicate entires.")
 
     # Use searchsorted to find indices of the step dates less than or equal to query dates
     indices = np.searchsorted(dates_step, query_dates, side='right') - 1
 
-    # Ensure that indices do not go out of bounds (for dates earlier than the first date in step)
-    indices = np.clip(indices, 0, len(dates_step) - 1)
+    if np.any(indices < 0):
+        raise ValueError("No query date should be before the first element in dates_step")
 
     # Return the corresponding rates
     interpolated_rates = rates[indices]

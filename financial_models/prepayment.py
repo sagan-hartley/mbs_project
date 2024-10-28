@@ -1,7 +1,21 @@
 import numpy as np
-from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from utils import convert_to_datetime
+
+SEASONAL_FACTORS_ARRAY = np.array([
+        0.75,  # January (month 1)
+        0.84,  # February (month 2)
+        0.93,  # March (month 3)
+        1.02,  # April (month 4)
+        1.11,  # May (month 5)
+        1.20,  # June (month 6)
+        1.20,  # July (month 7)
+        1.11,  # August (month 8)
+        1.02,  # September (month 9)
+        0.93,  # October (month 10)
+        0.84,  # November (month 11)
+        0.75   # December (month 12)
+    ])
 
 def calculate_pccs(short_rates, spread=0.04):
     """
@@ -16,133 +30,138 @@ def calculate_pccs(short_rates, spread=0.04):
     """
     return short_rates + spread
 
-def calculate_smms(pccs, coupon, market_close_date, settle_date, num_months, alpha=50):
+def refi_strength(spreads):
+    """
+    Calculate the refinancing strength based on an array of spread values.
+
+    The function applies a piecewise linear function (PWLF) to each spread value:
+    - Returns 0 if the spread is less than or equal to 0.
+    - Increases linearly from 0 to 0.0425 for spreads between 0 and 0.015.
+    - Returns a constant value of 0.0425 for spreads greater than or equal to 0.015.
+
+    Parameters
+    ----------
+    spreads : array-like
+        Array of spread values between the gross coupon rate and the primary
+        current coupon rate (PCC). Each value in this array represents
+        the incentive for a borrower to refinance.
+
+    Returns
+    -------
+    np.ndarray
+        An array of refinancing strength values corresponding to the input spreads,
+        with values bounded between 0 and 0.0425.
+
+    Examples
+    --------
+    >>> spreads = np.array([-0.01, 0, 0.0075, 0.015, 0.02])
+    >>> refi_strength(spreads)
+    array([0.    , 0.    , 0.02125, 0.0425 , 0.0425 ])
+    """
+    return np.where(
+        spreads <= 0,
+        0,
+        np.where(
+            spreads >= 0.015,
+            0.0425,
+            0.0425 / 0.015 * spreads
+        )
+    )
+
+def demo(origination_date, num_months, alpha = 0.005):
+    """
+    Calculate the demographic factors for each month of a loan's term.
+
+    Demographic factors are calculated as:
+        Demo(age) = seasoning(age) * seasonal(month)
+
+    where:
+    - seasoning(age) = max(1, age / 18) * alpha
+    - seasonal(month_of_year) represents a seasonal adjustment based on the month of the year.
+
+    Parameters
+    ----------
+    origination_date : datetime
+        The date when the loan was originated.
+    num_months : int
+        The number of months for the loan term.
+    alpha : float
+        The coefficient applied to seasoning factors calculations
+
+    Returns
+    -------
+    np.ndarray
+        An array of demographic factors for each month in the loan term.
+    """
+    # Generate ages in months from 1 up to num_months
+    ages = np.arange(1, num_months + 1)
+
+    # Seasoning factors based on age
+    seasoning_factors = np.maximum(1, ages / 18) * alpha
+
+    # Calculate month of year for each month in the loan term
+    start_month = origination_date.month
+    months_of_year = (start_month + ages - 2) % 12 + 1
+
+    # Use months_of_year to index directly into the precomputed seasonal factors array
+    # Subtract 1 from months_of_year because array indices are 0-based
+    seasonal_factors = SEASONAL_FACTORS_ARRAY[months_of_year - 1]
+
+    # Calculate demographic factors
+    demo_factors = seasoning_factors * seasonal_factors
+
+    return demo_factors
+
+def calculate_smms(pccs, coupon, market_close_date, origination_date, num_months):
     """
     Calculate the Single Monthly Mortality (SMM) rates based on the PCC and the MBS coupon.
     
-    If the PCC is less than the coupon rate, SMM is set to `alpha`. Otherwise, it is 0.
+    SMM is influenced by refinancing incentives and demographic factors over time.
+
+    Parameters
+    ----------
+    pccs : ndarray
+        A 2D array of Primary Current Coupon (PCC) values, where rows represent scenarios and columns
+        represent months.
+    coupon : float
+        The coupon rate of the MBS.
+    market_close_date : datetime or datetime64
+        The market close date for the MBS, indicating the start of the evaluation.
+    origination_date : datetime or datetime64
+        The origination date for the MBS.
+    num_months : int
+        The length of the MBS in months.
     
-    Parameters:
-    - pccs (ndarray): Array of PCC values.
-    - coupon (float): The coupon rate of the MBS.
-    - num_months (int): The length of the MBS in months.
-    - alpha (float): The turnover constant to apply when the PCC is less than the coupon. Default is 1.
+    Returns
+    -------
+    ndarray
+        A 2D array of SMM values for each scenario and month.
     
-    Returns:
-    - ndarray: Array of SMM values.
-    
-    Raises:
-    - ValueError: If the length of `pccs` is less than `num_months`.
+    Raises
+    ------
+    ValueError
+        If the length of `pccs` is less than `num_months` or if the PCC array has unexpected dimensions.
     """
-    if len(pccs[0]) < num_months:
+    if pccs.shape[1] < num_months:
         raise ValueError("Length of PCCs is less than the specified number of months.")
-    
-    # Convert to datetime if the market close and settle dates are input as a numpy datetime64 object
+
+    # Ensure dates are in datetime format
     market_close_date = convert_to_datetime(market_close_date)
-    settle_date = convert_to_datetime(settle_date)
+    origination_date = convert_to_datetime(origination_date)
 
-    # calculate the total number of months between the market close date and the settle date
-    delta = relativedelta(settle_date, market_close_date)
+    # Calculate months difference between origination and market close
+    delta = relativedelta(origination_date, market_close_date)
     total_months_diff = delta.years * 12 + delta.months
-    
-    # Shorten the PCCs to the specified number of months, starting at the index representing the settle date (the beginning of the accrual dates)
-    pccs = pccs[:, total_months_diff:total_months_diff + num_months]  
-    
-    # Calculate SMMs based on the conditions
-    smms = alpha*(coupon - pccs) # Vectorized condition
-    smms = np.clip(smms, 0, 0.9)  # Clip the SMM values to the range [0, 0.9]
-    
+
+    # Adjust PCCs for the relevant term window
+    pccs = pccs[:, total_months_diff:total_months_diff + num_months]
+
+    # Calculate the refinancing incentive and demographic factors
+    spread = coupon - pccs
+    refi_factors = refi_strength(spread)
+    demo_factors = demo(origination_date, num_months)
+
+    # SMM calculation as the sum of refinancing and demographic components
+    smms = refi_factors + demo_factors
+     
     return smms
-
-def calculate_turnover(alpha, beta_1, theta, loan_age):
-    """
-    Calculate the turnover rate.
-
-    Parameters:
-    - alpha (float): The base turnover rate.
-    - beta_1 (float): The sensitivity of turnover to loan age.
-    - theta (float): The decay factor for loan age.
-    - loan_age (float): The current age of the loan in months.
-
-    Returns:
-    - float: The calculated turnover rate.
-    """
-    turnover = alpha - beta_1 * np.exp(-theta * loan_age)
-    return turnover
-
-def calculate_seasonality(alpha, month, theta):
-    """
-    Calculate the seasonality factor based on the month.
-
-    Parameters:
-    - alpha (float): The base seasonal factor.
-    - month (int): The current month (1-12).
-    - theta (float): The seasonal adjustment factor.
-
-    Returns:
-    - float: The calculated seasonality factor.
-    """
-    seasonality = alpha * np.sin((np.pi / 2) * (month + theta - 3) / (3 - 1))
-    return seasonality
-
-def calculate_borrower_incentive(chi, beta_1, nu, x):
-    """
-    Calculate the borrower incentive.
-
-    Parameters:
-    - chi (float): The borrower behavior adjustment factor.
-    - beta_1 (float): The sensitivity of borrower incentive to changes.
-    - nu (float): A factor representing borrower behavior.
-    - x (float): A variable affecting borrower incentive.
-
-    Returns:
-    - float: The calculated borrower incentive.
-    """
-    borrower_incentive = np.arctan(chi * np.pi * beta_1 * (nu - np.arctan(x) / np.pi))
-    return borrower_incentive
-
-def calculate_burnout(beta_1, loan_age, beta_2, incentive, start_value):
-    """
-    Calculate the burnout factor.
-
-    Parameters:
-    - beta_1 (float): The burnout sensitivity parameter.
-    - loan_age (float): The current age of the loan in months.
-    - beta_2 (float): The additional burnout adjustment factor.
-    - incentive (float): The borrower incentive.
-    - start_value (float): The starting value for comparison.
-
-    Returns:
-    - float: The calculated burnout factor.
-    """
-    burnout = np.exp(beta_1 * loan_age + beta_2 * max(incentive, start_value))
-    return burnout
-
-def calculate_smm(alpha, beta_1, theta, chi, nu, x, beta_2, loan_age, month, start_value):
-    """
-    Calculate the SMM (Single Monthly Mortality) based on various factors.
-
-    Parameters:
-    - alpha (float): The base turnover rate.
-    - beta_1 (float): The sensitivity of turnover and burnout to loan age.
-    - theta (float): The decay factor for turnover.
-    - chi (float): The borrower behavior adjustment factor.
-    - nu (float): A factor representing borrower behavior.
-    - x (float): A variable affecting borrower incentive.
-    - beta_2 (float): The burnout adjustment factor.
-    - loan_age (float): The current age of the loan in months.
-    - month (int): The current month (1-12).
-    - start_value (float): The starting value for comparison in burnout calculation.
-
-    Returns:
-    - float: The calculated SMM.
-    """
-    # Calculate individual components
-    turnover = calculate_turnover(alpha, beta_1, theta, loan_age)
-    seasonality = calculate_seasonality(alpha, month, theta)
-    borrower_incentive = calculate_borrower_incentive(chi, beta_1, nu, x)
-    burnout = calculate_burnout(beta_1, loan_age, beta_2, borrower_incentive, start_value)
-
-    # Calculate the SMM using the components
-    smm = (turnover * seasonality) + (borrower_incentive * burnout)
-    return smm
