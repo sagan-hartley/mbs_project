@@ -68,7 +68,7 @@ def refi_strength(spreads):
         )
     )
 
-def demo(origination_date, num_months, alpha = 0.005):
+def demo(origination_date, num_months, base_smm = 0.005):
     """
     Calculate the demographic factors for each month of a loan's term.
 
@@ -76,7 +76,7 @@ def demo(origination_date, num_months, alpha = 0.005):
         Demo(age) = seasoning(age) * seasonal(month)
 
     where:
-    - seasoning(age) = max(1, age / 18) * alpha
+    - seasoning(age) = max(1, age / 18) * base_smm
     - seasonal(month_of_year) represents a seasonal adjustment based on the month of the year.
 
     Parameters
@@ -85,8 +85,8 @@ def demo(origination_date, num_months, alpha = 0.005):
         The date when the loan was originated.
     num_months : int
         The number of months for the loan term.
-    alpha : float
-        The coefficient applied to seasoning factors calculations
+    base_smm : float
+        The base demographic single month mortality rate
 
     Returns
     -------
@@ -97,7 +97,7 @@ def demo(origination_date, num_months, alpha = 0.005):
     ages = np.arange(1, num_months + 1)
 
     # Seasoning factors based on age
-    seasoning_factors = np.maximum(1, ages / 18) * alpha
+    seasoning_factors = np.maximum(1, ages / 18) * base_smm
 
     # Calculate month of year for each month in the loan term
     start_month = origination_date.month
@@ -163,5 +163,5 @@ def calculate_smms(pccs, coupon, market_close_date, origination_date, num_months
 
     # SMM calculation as the sum of refinancing and demographic components
     smms = refi_factors + demo_factors
-     
+
     return smms
