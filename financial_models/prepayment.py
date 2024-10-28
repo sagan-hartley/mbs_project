@@ -93,15 +93,16 @@ def demo(origination_date, num_months, base_smm = 0.005):
     np.ndarray
         An array of demographic factors for each month in the loan term.
     """
-    # Generate ages in months from 1 up to num_months
-    ages = np.arange(1, num_months + 1)
+    # Generate ages in months up to num_months
+    ages = np.arange(num_months)
 
     # Seasoning factors based on age
     seasoning_factors = np.maximum(1, ages / 18) * base_smm
 
     # Calculate month of year for each month in the loan term
     start_month = origination_date.month
-    months_of_year = (start_month + ages - 2) % 12 + 1
+    months_of_year = (start_month + ages) % 12
+    print(months_of_year[:13])
 
     # Use months_of_year to index directly into the precomputed seasonal factors array
     # Subtract 1 from months_of_year because array indices are 0-based
