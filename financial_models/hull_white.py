@@ -1,6 +1,7 @@
 import numpy as np
 from datetime import datetime
 from utils import (
+    convert_to_datetime,
     convert_to_datetime64_array,
     step_interpolate,
     DISC_DAYS_IN_YEAR
@@ -13,37 +14,27 @@ def calculate_theta(forward_curve, alpha, sigma, sim_short_rate_dates):
     
     Parameters:
     ----------
-    forward_curve : tuple 
-        A tuple containing rate_dates and corresponding forward rates (rate_dates, rate_vals).
-    alpha : float 
-        The mean-reversion rate in the Hull-White model (if 0, a special case is handled).
-    sigma : float 
-        Volatility of the short rate.
-    sim_short_rate_dates : list or ndarray 
-        Array of dates for the Monte Carlo simulation.
+    - forward_curve (ForwardCurve): A ForwardCurve object with rate dates and rate values as attributes.
+    - alpha (float) : The mean-reversion rate in the Hull-White model (if 0, a special case is handled).
+    - sigma (float) : Volatility of the short rate.
+    - sim_short_rate_dates (array-like) : Array of dates for the Monte Carlo simulation.
 
     Returns:
     -------
-    sim_short_rate_dates : ndarray 
-        The simulated short rate dates where theta is evaluated.
-    theta : ndarray 
-        The drift term theta(t) at each simulated short rate date.
+    - sim_short_rate_dates (ndarray) : The simulated short rate dates where theta is evaluated.
+    - theta_vals (ndarray) : The drift term theta(t) at each simulated short rate date.
     """
-    
-    rate_dates, rate_vals = forward_curve  # Unpack the forward curve tuple
+    # If the length of forward_curve.rates is short by one, repeat the last rate for the last date
+    # This happens in the coarse curve calibration, but not the fine curve calibration
+    if len(forward_curve.rates) == len(forward_curve.dates) - 1:
+        forward_curve.rates = np.concatenate([forward_curve.rates, [forward_curve.rates[-1]]])
 
-    # Ensure rate_vals and rate_dates are aligned in length
-    if len(rate_vals) != len(rate_dates) and len(rate_vals) != len(rate_dates) - 1:
-        raise ValueError("rate_vals should be the same length or one index less than rate_dates")
-
-    # If rate_vals is shorter by one, repeat the last rate for the last date
-    if len(rate_vals) == len(rate_dates) - 1:
-        rate_vals = np.concatenate([rate_vals, [rate_vals[-1]]])
-
-    # Convert rate_dates and sim_short_rate_dates to numpy datetime64 for vectorized operations
-    rate_dates = convert_to_datetime64_array(rate_dates)
+    # Convert forward_curve.dates and sim_short_rate_dates to numpy datetime64 arrays for vectorized operations
+    forward_curve.dates = convert_to_datetime64_array(forward_curve.dates)
     sim_short_rate_dates = convert_to_datetime64_array(sim_short_rate_dates)
-    market_close_date = rate_dates[0]
+
+    # Convert the market_close_date to datetime64 to ensure compatibility with forward_curve.dates
+    market_close_date = convert_to_datetime64_array(forward_curve.market_close_date)
 
     # Check that all simulated short rate dates are after or equal to the market close date
     if np.any(sim_short_rate_dates < market_close_date):
@@ -53,7 +44,7 @@ def calculate_theta(forward_curve, alpha, sigma, sim_short_rate_dates):
     sim_short_rate_deltas = (sim_short_rate_dates - market_close_date).astype(float) / DISC_DAYS_IN_YEAR
 
     # Use step interpolation to find forward rates for the simulated short rate dates
-    forward_rates = step_interpolate(rate_dates, rate_vals, sim_short_rate_dates)
+    forward_rates = step_interpolate(forward_curve.dates, forward_curve.rates, sim_short_rate_dates)
 
     # Calculate the numerical derivative of forward rates w.r.t. time (using finite differences)
     dfdt = np.gradient(forward_rates, sim_short_rate_deltas)
@@ -87,6 +78,7 @@ def hull_white_simulate(alpha, sigma, theta, start_rate, iterations=1000, antith
     - r_avg (ndarray): The average simulated short rate path across iterations.
     - r_var (ndarray): The simulated variance for each short rate step across iterations.
     """
+    # Unpack the dates and value from theta and get the number of steps by their length
     dates, vals = theta
     num_steps = len(dates)
 
@@ -168,7 +160,7 @@ def hull_white_simulate_from_curve(alpha, sigma, forward_curve, short_rate_dates
     ----------
     - alpha (float) : The mean reversion rate in the Hull-White model.
     - sigma (float) : The volatility of the short rate.
-    - forward_curve (tuple) : A tuple of (dates, forward_rate_values) from the forward curve.
+    - forward_curve (ForwardCurve): A ForwardCurve object with rate dates and rate values as attributes.
     - short_rate_dates (array-like) : An array of dates for which the short rate will be simulated.
     - start_rate (float) : The initial short rate at the starting date.
     - iterations (int) : The number of simulation paths to generate (default: 1000).

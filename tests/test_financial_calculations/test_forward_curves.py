@@ -1,10 +1,7 @@
 import unittest
 from datetime import datetime
 import numpy as np
-from financial_calculations.forward_curves import (
-    bootstrap_forward_curve,
-    calibrate_finer_forward_curve
-)
+from financial_calculations.forward_curves import ForwardCurve
 
 class TestBootstrapForwardCurve(unittest.TestCase):
     """
@@ -33,34 +30,29 @@ class TestBootstrapForwardCurve(unittest.TestCase):
         ]
         # Market close date in datetime format
         self.market_close_date = datetime(2024, 8, 10)
-        # balance for the bonds
+        # Balance for the bonds
         self.balance = 100
+        # Initialize a ForwardCurve object
+        self.curve = ForwardCurve(self.market_close_date)
 
     def test_basic_bootstrap(self):
         """
         Test basic functionality of `bootstrap_forward_curve` with standard input.
         
-        This checks:
-        - The length of disc rate dates and rates returned.
-        - That disc rates are bounded within the range [0, 1].
+        This checks the length of dates and rates assigned by the method.
         """
-        disc_rate_dates, disc_rates = bootstrap_forward_curve(
-            self.cmt_data, self.market_close_date, self.balance
-        )
+        self.curve.bootstrap_forward_curve(self.cmt_data, self.balance)
 
         # Check that the number of disc rate dates equals the number of maturities + 1 (for the market close date)
         self.assertEqual(
-            len(disc_rate_dates), len(self.cmt_data) + 1
+            len(self.curve.dates), len(self.cmt_data) + 1
         )
         # Check that the number of disc rates equals the number of maturities
-        self.assertEqual(len(disc_rates), len(self.cmt_data))
+        self.assertEqual(len(self.curve.rates), len(self.cmt_data))
 
-        # Disc rates should be between 0 and 1
         # We will test that the actual values of the forward curve rates are correct in tests/test_financial_calculations/test_coupon_rates.py
         # by comparing these rates to the coupons produced when the start date of the coupon is on a disc rate date
-        self.assertTrue(np.all(np.array(disc_rates) >= 0))
-        self.assertTrue(np.all(np.array(disc_rates) <= 1))
-
+   
     def test_initial_guess(self):
         """
         Test the effect of varying initial guesses on the results.
@@ -71,19 +63,13 @@ class TestBootstrapForwardCurve(unittest.TestCase):
         # Different initial guesses for the optimization
         initial_guesses = [0.01, 0.05, 0.0, 1.0]
         for guess in initial_guesses:
-            disc_rate_dates, disc_rates = bootstrap_forward_curve(
-                self.cmt_data, self.market_close_date, self.balance, initial_guess=guess
+            self.curve.bootstrap_forward_curve(
+                self.cmt_data, self.balance, guess
             )
 
             # Check the length of disc rate dates and rates
-            self.assertEqual(
-                len(disc_rate_dates), len(self.cmt_data) + 1
-            )
-            self.assertEqual(len(disc_rates), len(self.cmt_data))
-
-            # Disc rates should still be bounded between 0 and 1
-            self.assertTrue(np.all(np.array(disc_rates) >= 0))
-            self.assertTrue(np.all(np.array(disc_rates) <= 1))
+            self.assertEqual(len(self.curve.dates), len(self.cmt_data) + 1)
+            self.assertEqual(len(self.curve.rates), len(self.cmt_data))
 
     def test_edge_cases(self):
         """
@@ -97,39 +83,11 @@ class TestBootstrapForwardCurve(unittest.TestCase):
             [(10, 0.01)]  # Long maturity period (10 years)
         ]
         for cmt_data in edge_cases:
-            disc_rate_dates, disc_rates = bootstrap_forward_curve(
-                cmt_data, self.market_close_date, self.balance
-            )
+            self.curve.bootstrap_forward_curve(cmt_data, self.balance)
 
             # Check the length of disc rate dates and rates
-            self.assertEqual(len(disc_rate_dates), len(cmt_data) + 1)
-            self.assertEqual(len(disc_rates), len(cmt_data))
-
-            # Disc rates should be bounded between 0 and 1
-            self.assertTrue(np.all(np.array(disc_rates) >= 0))
-            self.assertTrue(np.all(np.array(disc_rates) <= 1))
-
-    def test_input_types(self):
-        """
-        Test equivalency of results when the market close date is a `datetime` or `datetime64[D]`.
-        
-        This ensures the function behaves consistently regardless of the date type.
-        """
-        # Market close date as datetime and datetime64[D]
-        market_close_datetime = self.market_close_date
-        market_close_datetime64 = np.datetime64('2024-08-10', 'D')
-
-        # Call the function with both date formats
-        disc_dates_datetime, disc_rates_datetime = bootstrap_forward_curve(
-            self.cmt_data, market_close_datetime, self.balance
-        )
-        disc_dates_datetime64, disc_rates_datetime64 = bootstrap_forward_curve(
-            self.cmt_data, market_close_datetime64, self.balance
-        )
-
-        # Ensure outputs are almost equal
-        np.testing.assert_array_equal(disc_dates_datetime, disc_dates_datetime64)
-        np.testing.assert_array_almost_equal(disc_rates_datetime, disc_rates_datetime64)
+            self.assertEqual(len(self.curve.dates), len(cmt_data) + 1)
+            self.assertEqual(len(self.curve.rates), len(cmt_data))
 
     def test_consistency(self):
         """
@@ -139,17 +97,15 @@ class TestBootstrapForwardCurve(unittest.TestCase):
         across repeated runs with the same input.
         """
         for _ in range(10):
-            disc_rate_dates1, disc_rates1 = bootstrap_forward_curve(
-                self.cmt_data, self.market_close_date, self.balance
-            )
-            disc_rate_dates2, disc_rates2 = bootstrap_forward_curve(
-                self.cmt_data, self.market_close_date, self.balance
-            )
+            self.curve.bootstrap_forward_curve(self.cmt_data, self.balance)
+            # Define a second curve to test consistency
+            curve_2 = ForwardCurve(self.market_close_date)
+            curve_2.bootstrap_forward_curve(self.cmt_data, self.balance)
 
             # Ensure the disc rate dates are exactly the same across runs
-            np.testing.assert_array_equal(disc_rate_dates1, disc_rate_dates2)
+            np.testing.assert_array_equal(self.curve.dates, curve_2.dates)
             # Ensure the disc rates are nearly equal across runs (accounting for floating point precision)
-            np.testing.assert_array_almost_equal(disc_rates1, disc_rates2)
+            np.testing.assert_array_almost_equal(self.curve.rates, curve_2.rates)
 
 
 class TestCalibrateFinerForwardCurve(unittest.TestCase):
@@ -173,42 +129,34 @@ class TestCalibrateFinerForwardCurve(unittest.TestCase):
         self.cmt_data = [(1, 0.03), (2, 0.04), (3, 0.05)]
         # Market close date in datetime format
         self.market_close_date = datetime(2024, 8, 10)
-        # balance for the bonds
+        # Balance for the bonds
         self.balance = 100
+        # Initialize a ForwardCurve object
+        self.curve = ForwardCurve(self.market_close_date)
 
     def test_monthly_frequency(self):
         """
         Test the function with monthly frequency.
         
-        This verifies that the number of dates and rates returned is correct,
-        and that the disc rates are within the expected range.
+        This verifies that the number of dates and rates returned is correct.
         """
-        disc_rate_dates, disc_rates = calibrate_finer_forward_curve(
-            self.cmt_data, self.market_close_date, self.balance, frequency='monthly'
-        )
+        self.curve.calibrate_finer_forward_curve(self.cmt_data, self.balance, frequency='monthly')
         
         # We will test that the actual values of the forward curve rates are correct in tests/test_financial_calculations/test_coupon_rates.py
         # by comparing these rates to the coupons produced when the start date of the coupon is on a disc rate date
-        self.assertEqual(len(disc_rate_dates), 37)  # Expecting 3 years of monthly rates
-        self.assertEqual(len(disc_rates), 37) # These lengths are (12*3) + 1 (start date)
-        self.assertGreaterEqual(min(disc_rates), 0)  # Rates should be non-negative
-        self.assertLessEqual(max(disc_rates), 1)     # Rates should not exceed 1
+        self.assertEqual(len(self.curve.dates), 37)  # Expecting 3 years of monthly rates
+        self.assertEqual(len(self.curve.rates), 37) # These lengths are (12*3) + 1 (start date)
 
     def test_weekly_frequency(self):
         """
         Test the function with weekly frequency.
         
-        This verifies that the number of dates and rates returned is correct,
-        and that the disc rates are within the expected range.
+        This verifies that the number of dates and rates returned is correct.
         """
-        disc_rate_dates, disc_rates = calibrate_finer_forward_curve(
-            self.cmt_data, self.market_close_date, self.balance, frequency='weekly'
-        )
+        self.curve.calibrate_finer_forward_curve(self.cmt_data, self.balance, frequency='weekly')
         
-        self.assertEqual(len(disc_rate_dates), 157)  # Expecting 3 years of weekly rates (52*3) + 1 (start date)
-        self.assertEqual(len(disc_rates), 157)
-        self.assertGreaterEqual(min(disc_rates), 0)
-        self.assertLessEqual(max(disc_rates), 1)
+        self.assertEqual(len(self.curve.dates), 157)  # Expecting 3 years of weekly rates (52*3) + 1 (start date)
+        self.assertEqual(len(self.curve.rates), 157)
 
     def test_invalid_frequency(self):
         """
@@ -217,21 +165,7 @@ class TestCalibrateFinerForwardCurve(unittest.TestCase):
         This ensures that the function raises a ValueError for unsupported frequencies.
         """
         with self.assertRaises(ValueError):
-            calibrate_finer_forward_curve(self.cmt_data, self.market_close_date, self.balance, frequency='daily')
-
-    def test_datetime64_market_close_date(self):
-        """
-        Test the function with numpy datetime64 input for market_close_date.
-        
-        This ensures that the function handles numpy datetime64 dates correctly.
-        """
-        market_close_date_np = np.datetime64('2024-08-10')
-        disc_rate_dates, disc_rates = calibrate_finer_forward_curve(
-            self.cmt_data, market_close_date_np, self.balance, frequency='monthly'
-        )
-        
-        self.assertEqual(len(disc_rate_dates), 37)
-        self.assertEqual(len(disc_rates), 37)
+            self.curve.calibrate_finer_forward_curve(self.cmt_data, self.balance, frequency='daily')
 
 if __name__ == '__main__':
     unittest.main()

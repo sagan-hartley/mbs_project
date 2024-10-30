@@ -10,7 +10,9 @@ from utils import (
     discount_cash_flows,
     create_fine_dates_grid,
     step_interpolate,
-    days360
+    days360,
+    calculate_dv,
+    calculate_convexity
 )
 
 class TestConvertToDatetime(unittest.TestCase):
@@ -396,6 +398,87 @@ class TestDays360(unittest.TestCase):
         d2 = datetime(2024, 9, 30)
         with self.assertRaises(AssertionError):
             days360(d1, d2)
+
+class TestCalculateDV(unittest.TestCase):
+    def test_positive_dv(self):
+        """Test DV calculation with a positive price change."""
+        price_up = 100.05
+        price_down = 99.95
+        delta = 0.0001
+        expected_dv = (price_up - price_down) / delta
+        self.assertAlmostEqual(calculate_dv(price_up, price_down, delta), expected_dv, places=6)
+
+    def test_negative_dv(self):
+        """Test DV calculation with a negative price change."""
+        price_up = 99.95
+        price_down = 100.05
+        delta = 0.0001
+        expected_dv = (price_up - price_down) / delta
+        self.assertAlmostEqual(calculate_dv(price_up, price_down, delta), expected_dv, places=6)
+
+    def test_zero_delta(self):
+        """Test DV calculation when delta is zero, expecting a ZeroDivisionError."""
+        price_up = 100.05
+        price_down = 99.95
+        delta = 0
+        with self.assertRaises(ZeroDivisionError):
+            calculate_dv(price_up, price_down, delta)
+
+    def test_zero_price_change(self):
+        """Test DV calculation when there is no price change, expecting DV of 0."""
+        price_up = 100.0
+        price_down = 100.0
+        delta = 0.0001
+        expected_dv = 0.0
+        self.assertAlmostEqual(calculate_dv(price_up, price_down, delta), expected_dv, places=6)
+
+    def test_large_delta(self):
+        """Test DV calculation with a larger delta."""
+        price_up = 105.0
+        price_down = 95.0
+        delta = 0.01
+        expected_dv = (price_up - price_down) / delta
+        self.assertAlmostEqual(calculate_dv(price_up, price_down, delta), expected_dv, places=6)
+
+class TestCalculateConvexity(unittest.TestCase):
+    def test_basic_convexity(self):
+        """Test the convexity calculation with typical price changes."""
+        price = 100
+        price_up = 100.05
+        price_down = 99.95
+        delta_y = 0.0001
+        result = calculate_convexity(price, price_up, price_down, delta_y)
+        expected_result = (100.05 + 99.95 - 2 * 100) / (100 * (0.0001 ** 2))
+        self.assertAlmostEqual(result, expected_result, places=6)
+
+    def test_zero_convexity(self):
+        """Test convexity when price changes are symmetric, indicating no curvature."""
+        price = 100
+        price_up = 100
+        price_down = 100
+        delta_y = 0.0001
+        result = calculate_convexity(price, price_up, price_down, delta_y)
+        self.assertAlmostEqual(result, 0, places=6)
+
+    def test_small_delta_y(self):
+        """Test the convexity with a very small delta_y to observe handling of potential large values."""
+        price = 100
+        price_up = 100.001
+        price_down = 99.999
+        delta_y = 1e-8
+        result = calculate_convexity(price, price_up, price_down, delta_y)
+        expected_result = (100.001 + 99.999 - 2 * 100) / (100 * (1e-8 ** 2))
+        self.assertAlmostEqual(result, expected_result, places=6)
+
+    def test_large_delta_y(self):
+        """Test with a large delta_y to confirm correct scaling in convexity calculation."""
+        price = 100
+        price_up = 101
+        price_down = 99
+        delta_y = 0.01
+        result = calculate_convexity(price, price_up, price_down, delta_y)
+        expected_result = (101 + 99 - 2 * 100) / (100 * (0.01 ** 2))
+        self.assertAlmostEqual(result, expected_result, places=6)
 
 if __name__ == "__main__":
     unittest.main()

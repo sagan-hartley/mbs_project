@@ -102,7 +102,6 @@ def demo(origination_date, num_months, base_smm = 0.005):
     # Calculate month of year for each month in the loan term
     start_month = origination_date.month
     months_of_year = (start_month + ages) % 12
-    print(months_of_year[:13])
 
     # Use months_of_year to index directly into the precomputed seasonal factors array
     # Subtract 1 from months_of_year because array indices are 0-based

@@ -6,7 +6,7 @@ DISC_DAYS_IN_YEAR = 365.0
 
 def convert_to_datetime(date):
     """
-    Convert a string, numpy.datetime64, or datetime object to a Python datetime object.
+    Convert a string, numpy.datetime64, date, or datetime object to a Python datetime object.
 
     Parameters:
     - date (str, numpy.datetime64, or datetime): The date to be converted. 
@@ -268,3 +268,53 @@ def days360(d1, d2):
 
     # Calculate the number of days using 360-day year convention
     return (d2.year - d1.year) * 360 + (d2.month - d1.month) * 30 + (d2_day - d1_day)
+
+def calculate_dv(value_up, value_down, delta):
+    """
+    Calculate the dollar value (DV) for a given value change, typically used for DV01 calculations.
+
+    Parameters:
+    - value_up (float): value of the bond or instrument after a small yield increase.
+    - value_down (float): value of the bond or instrument after a small yield decrease.
+    - delta (float): The change in yield between the two values, typically in decimal form (e.g., 0.0001 for 1 bp).
+
+    Returns:
+    - float: The dollar value representing the value sensitivity per unit change in yield.
+
+    Example:
+    --------
+    If value_up and value_down represent the bond values after a ±1 basis point change, and delta is 0.0001, 
+    this function returns the DV01 (value sensitivity to a 1 bp yield change).
+    
+    Usage:
+    ------
+    dv01 = calculate_dv(value_up, value_down, 0.0001)
+    """
+    # Calculate the dollar value by finding the value difference and dividing by yield change
+    dv = (value_up - value_down) / delta
+
+    # Return the result as the DV, which represents sensitivity to yield changes
+    return dv
+
+def calculate_convexity(value, value_up, value_down, delta):
+    """
+    Calculate convexity using value changes for a small yield change.
+
+    Convexity is a measure of the sensitivity of the instrument's duration to changes in interest rates.
+    It accounts for the non-linear relationship between values and yields, providing
+    a more accurate reflection of interest rate risk.
+
+    Parameters:
+    - value (float): Current value.
+    - value_up (float): value if yields decrease by delta.
+    - value_down (float): value if yields increase by delta.
+    - delta (float): Small yield change in decimal form (e.g., 0.0001 for 1 basis point).
+
+    Returns:
+    - float: The convexity measure, a higher value suggests higher interest rate sensitivity.
+    """
+    # Calculate the convexity using the difference between the values when the yield is increased and decreased,
+    # and the original value. This helps measure curvature in the value-yield relationship.
+    convexity = (value_up + value_down - 2 * value) / (value * (delta ** 2))
+    
+    return convexity

@@ -4,11 +4,12 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from utils import (
     convert_to_datetime,
-    discount_cash_flows
+    discount_cash_flows,
+    calculate_dv,
+    calculate_convexity
 )
 from financial_calculations.forward_curves import (
-    bootstrap_forward_curve,
-    calibrate_finer_forward_curve
+    ForwardCurve
 )
 from financial_calculations.mbs_cash_flows import (
     calculate_scheduled_balances,
@@ -120,8 +121,8 @@ def plot_forward_curves(coarse_curve, fine_curve):
         None
     """
     plt.figure(figsize=(10, 6))
-    plt.step(coarse_curve[0], np.append(coarse_curve[1], coarse_curve[1][-1]), where='post', label='Coarse Curve', color='blue')
-    plt.step(fine_curve[0], fine_curve[1], where='post', label='Fine Curve', color='orange')
+    plt.step(coarse_curve.dates, np.append(coarse_curve.rates, coarse_curve.rates[-1]), where='post', label='Coarse Curve', color='blue')
+    plt.step(fine_curve.dates, fine_curve.rates, where='post', label='Fine Curve', color='orange')
     plt.xlabel('Date')
     plt.ylabel('Rate')
     plt.title('Forward Curves')
@@ -136,8 +137,8 @@ def price_mbs_cash_flows(mbs_data, smms, coarse_curve, fine_curve):
     Parameters:
     mbs_data (list): A list containing details of the MBSs including ID, balance, number of months, gross and net annual coupons, accrual dates, single monthly mortality (SMM) rate, and payment delay days.
     smms (ndarray): A ndarray containing prepayment rates.
-    coarse_curve (tuple): A tuple containing coarse rate dates and corresponding forward rate values.
-    fine_curve (tuple): A tuple containing fine rate dates and corresponding forward rate values.
+    coarse_curve (ForwardCurve): A ForwardCurve object containing coarse rate dates and corresponding forward rate values as attributes.
+    fine_curve (ForwardCurve): A ForwardCurve object containing fine rate dates and corresponding forward rate values as attributes.
     
     Returns:
     tuple
@@ -148,10 +149,6 @@ def price_mbs_cash_flows(mbs_data, smms, coarse_curve, fine_curve):
     coarse_curve_results = []
     fine_curve_results = []
 
-    # Unpack the coarse and fine forward curve rate dates and values
-    coarse_rate_dates, coarse_rate_vals = coarse_curve 
-    fine_rate_dates, fine_rate_vals = fine_curve 
-
     # Loop through each mbs and print the ID, coarse price, fine price, and WAL
     for mbs in mbs_data:
         # Unpack the MBS details
@@ -161,8 +158,8 @@ def price_mbs_cash_flows(mbs_data, smms, coarse_curve, fine_curve):
         scheduled_balance_data = calculate_scheduled_balances(balance, origination_date, num_months, gross_annual_coupon)
         actual_balance_data = calculate_actual_balances(scheduled_balance_data, smms, net_annual_coupon, payment_delay)
 
-        coarse_curve_result = evaluate_cash_flows(actual_balance_data, settle_date, net_annual_coupon, coarse_rate_vals, coarse_rate_dates)
-        fine_curve_result = evaluate_cash_flows(actual_balance_data, settle_date, net_annual_coupon, fine_rate_vals, fine_rate_dates)
+        coarse_curve_result = evaluate_cash_flows(actual_balance_data, settle_date, net_annual_coupon, coarse_curve.rates, coarse_curve.dates)
+        fine_curve_result = evaluate_cash_flows(actual_balance_data, settle_date, net_annual_coupon, fine_curve.rates, fine_curve.dates)
         
         print(f"{mbs[0]}: Coarse Price = {coarse_curve_result[2]}, Fine Price = {fine_curve_result[2]}, WAL = {coarse_curve_result[0]} years")
 
@@ -174,7 +171,7 @@ def price_mbs_cash_flows(mbs_data, smms, coarse_curve, fine_curve):
 
 def evaluate_mbs_short_rate_paths(mbs_data, short_rates, short_rate_dates):
     """
-    Calculate expected values and prices, path standard deviations, and DV01 for MBS based on short rate paths.
+    Calculate expected values and prices, path standard deviations, DV01, and convexity for MBS based on short rate paths.
 
     Parameters:
     - mbs_data (list): A list containing details of the MBSs including ID, balance, number of months, gross and net annual coupons, accrual dates, single monthly mortality (SMM) rate, and payment delay days.
@@ -182,14 +179,14 @@ def evaluate_mbs_short_rate_paths(mbs_data, short_rates, short_rate_dates):
     - short_rate_dates (tuple): Array of dates corresponding to the short rates.
 
     Returns:
-    - results (list): A list of dictionaries containing MBS ID, expected value, expected price, DV01, and standard deviations for each MBS.
+    - results (list): A list of dictionaries containing MBS ID, expected value, expected price, DV01, convexity, and standard deviations for each MBS.
     """
     results = []  # To store results for each MBS
     market_close_date = short_rate_dates[0]  # Extract the market close date from the short rate dates
 
     # Loop through each MBS in the provided data
     for mbs in mbs_data:
-        wals, vals, prices, dv01s = [], [], [], []  # Lists to store results for the current MBS
+        wals, vals, prices, dv01s, bumped_up_vals, bumped_down_vals = [], [], [], [], [], []  # Lists to store results for the current MBS
 
         # Unpack the MBS details
         mbs_id, balance, num_months, gross_annual_coupon, net_annual_coupon, settle_date, origination_date, payment_delay = mbs
@@ -210,10 +207,10 @@ def evaluate_mbs_short_rate_paths(mbs_data, short_rates, short_rate_dates):
         bumped_pccs_down = calculate_pccs(short_rates_down)
         bumped_smms_down = calculate_smms(bumped_pccs_down, gross_annual_coupon, market_close_date, origination_date, num_months)
 
-        # Loop through each SMM to calculate cash flows
-        for index, smm in enumerate(smms):
+        # Loop through each SMM path to calculate cash flows
+        for index, smm_path in enumerate(smms):
             # Calculate the actual scheduled balances based on the current SMM
-            actual_balance_data = calculate_actual_balances(scheduled_balance_data, smm, net_annual_coupon, payment_delay)
+            actual_balance_data = calculate_actual_balances(scheduled_balance_data, smm_path, net_annual_coupon, payment_delay)
 
             # Evaluate the cash flows for the current MBS using the actual balances, SMM, and short rates data
             wal, val, price = evaluate_cash_flows(actual_balance_data, settle_date, net_annual_coupon, short_rates[index], short_rate_dates)
@@ -223,33 +220,42 @@ def evaluate_mbs_short_rate_paths(mbs_data, short_rates, short_rate_dates):
             vals.append(val)
             prices.append(price)
 
-            # Calculate bumped actual balances and cash flows for upward and downward bumped short rates
+            # Calculate bumped actual balances and cash flows values for upward and downward bumped short rates
             actual_balance_data_up = calculate_actual_balances(scheduled_balance_data, bumped_smms_up[index], net_annual_coupon, payment_delay)
-            _, _, price_up = evaluate_cash_flows(actual_balance_data_up, settle_date, net_annual_coupon, short_rates_up[index], short_rate_dates)
+            _, val_up, _ = evaluate_cash_flows(actual_balance_data_up, settle_date, net_annual_coupon, short_rates_up[index], short_rate_dates)
 
             actual_balance_data_down = calculate_actual_balances(scheduled_balance_data, bumped_smms_down[index], net_annual_coupon, payment_delay)
-            _, _, price_down = evaluate_cash_flows(actual_balance_data_down, settle_date, net_annual_coupon, short_rates_down[index], short_rate_dates)
+            _, val_down, _ = evaluate_cash_flows(actual_balance_data_down, settle_date, net_annual_coupon, short_rates_down[index], short_rate_dates)
 
-            # Calculate DV01 as the difference between the up and down bumped prices divided by twice the bump amount times one hundred (to convert to units of percent)
-            dv01 = (price_down - price_up) / (2 * 100 * bump_amount)
+            # Store the bumped values
+            bumped_up_vals.append(val_up)
+            bumped_down_vals.append(val_down)
+
+            # Calculate DV01 and convexity and store the results
+            dv01 = calculate_dv(val_up, val_down, delta = 2 * bump_amount) / 10000 # The devision by 10000 is to convert to units of change in price per basis point
             dv01s.append(dv01)
 
-        # Calculate means for the WAL, value, price, and DV01 of the MBS
+        # Calculate means for the WAL, value, price, DV01, and bumped values of the MBS
         expected_wal = np.mean(wals)
         expected_value = np.mean(vals)
         expected_price = np.mean(prices)
         expected_dv01 = np.mean(dv01s)
+        expected_val_up = np.mean(bumped_up_vals)
+        expected_val_down = np.mean(bumped_down_vals)
 
         # Calculate standard deviations
         wal_std = np.std(wals)
         val_std = np.std(vals)
         price_std = np.std(prices)
         dv01_std = np.std(dv01s)
+       
+        # Calculate the convexity
+        convexity = calculate_convexity(expected_value, expected_val_up, expected_val_down, bump_amount)
 
         # Print the results for the current MBS
         print(f"{mbs_id}, Expected WAL: {expected_wal}, WAL Path STD: {wal_std}, Expected Value: {expected_value}, "
               f"Value Path STD: {val_std}, Expected Price: {expected_price}, Price Path STD: {price_std}, "
-              f"Expected DV01: {expected_dv01}, DV01 Path STD: {dv01_std}")
+              f"Expected DV01: {expected_dv01}, DV01 Path STD: {dv01_std}, Convexity: {convexity}")
 
         # Store the result in a dictionary for structured output
         results.append({
@@ -261,7 +267,8 @@ def evaluate_mbs_short_rate_paths(mbs_data, short_rates, short_rate_dates):
             'expected_price': expected_price,
             'price_std': price_std,
             'expected_dv01': expected_dv01,
-            'dv01_std': dv01_std
+            'dv01_std': dv01_std,
+            'convexity': convexity
         })
 
     return results  # Return the list of results for all MBS
@@ -314,14 +321,14 @@ def plot_hull_white(hull_white, forward_curve, title='Hull-White Average Path vs
 
     Parameters:
     hull_white (tuple): A tuple of rate dates and rate values for the Hull-White simulation.
-    forward_curve (tuple): A tuple of rate dates and rate values for the forward curve.
+    forward_curve (ForwardCurve): A ForwardCurve object with rate dates and rate values as attributes.
     title (str): A string representing the title of the grpah. Default is 'Hull-White Average Path vs Forward Curve'.
 
     Returns:
         None
     """
     plt.figure(figsize=(10, 6))
-    plt.step(forward_curve[0], forward_curve[1], where='post', label='Fine Curve', color='orange')
+    plt.step(forward_curve.dates, forward_curve.rates, where='post', label='Fine Curve', color='orange')
     plt.step(hull_white[0], hull_white[2], where='post', label='Hull-White', color='red')
     plt.xlabel('Date')
     plt.ylabel('Rate')
@@ -336,7 +343,7 @@ def plot_hull_white_paths(hull_white, forward_curve, title='Hull-White Paths vs 
 
     Parameters:
     hull_white (tuple): A tuple of rate dates and rate values for the Hull-White simulation.
-    forward_curve (tuple): A tuple of rate dates and rate values for the forward curve.
+    forward_curve (ForwardCurve): A ForwardCurve object with rate dates and rate values as attributes.
     title (str): A string representing the title of the grpah. Default is 'Hull-White Paths vs Forward Curve'.
 
     Returns:
@@ -349,7 +356,7 @@ def plot_hull_white_paths(hull_white, forward_curve, title='Hull-White Paths vs 
     for index, rate in enumerate(hull_white[1]):
         plt.step(hull_white[0], rate, where='post', label=f'Hull-White Path {index + 1}', color=colors[index], alpha=0.6)
     
-    plt.step(forward_curve[0], forward_curve[1], where='post', label='Fine Curve', color='orange')
+    plt.step(forward_curve.dates, forward_curve.rates, where='post', label='Fine Curve', color='orange')
     plt.xlabel('Date')
     plt.ylabel('Rate')
     plt.title(title)
@@ -389,8 +396,14 @@ def main():
     mbs_data = load_mbs_data(mbs_file)
     
     # Calculate forward curves
-    coarse_curve = bootstrap_forward_curve(calibration_data, market_close_date, 100)
-    fine_curve = calibrate_finer_forward_curve(calibration_data, market_close_date, 100, smoothing_error_weight=50000)
+    coarse_curve = ForwardCurve(market_close_date)
+    print(type(coarse_curve.market_close_date))
+    coarse_curve.bootstrap_forward_curve(calibration_data, 100)
+    print(type(coarse_curve.market_close_date))
+    fine_curve = ForwardCurve(market_close_date)
+    print(type(fine_curve.market_close_date))
+    fine_curve.calibrate_finer_forward_curve(calibration_data, 100, smoothing_error_weight=50000)
+    print(type(fine_curve.dates[0]))
     
     # Plot the curves
     plot_forward_curves(coarse_curve, fine_curve)
@@ -402,18 +415,18 @@ def main():
     results = price_mbs_cash_flows(mbs_data, smms, coarse_curve, fine_curve)
 
     # Define the start rate based on information from the fine forward curve
-    start_rate = fine_curve[1][0]
+    start_rate = fine_curve.rates[0]
 
     # Define alpha, sigma, and num_iterations
     alpha = 1
     sigma = 0.01
-    num_iterations = 1000
+    num_iterations = 100
 
     print(f"Alpha: {alpha}, Sigma: {sigma}, Number of Iterations: {num_iterations}")
 
     # Define the short rate dates to be used for the Hull-White simulation
     # In this case we will use the already defined monthly grid from the fine curve
-    short_rate_dates = fine_curve[0]
+    short_rate_dates = fine_curve.dates
 
     # Use Hull-White to simulate short rates based on the fine forward curve data
     hull_white = hull_white_simulate_from_curve(alpha, sigma, fine_curve, short_rate_dates, start_rate, num_iterations)
@@ -443,7 +456,7 @@ def main():
     short_rates = hull_white[1]
 
     # Simulate expected WALs, values, prices, and their standard deviations from the first set of short rates
-    simulated_mbs_values = evaluate_mbs_short_rate_paths(mbs_data, short_rates, fine_curve[0])
+    simulated_mbs_values = evaluate_mbs_short_rate_paths(mbs_data, short_rates, fine_curve.dates)
 
 if __name__ == '__main__':
     main()
