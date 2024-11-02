@@ -101,7 +101,7 @@ class TestCreateSpotSemiBondCashFlows(unittest.TestCase):
 
         np_market_close_date = self.market_close_date
         dt_market_close_date = datetime(2024, 8, 10)
-        str_market_close_date = '2024-08-10'
+        str_market_close_date = '08/10/2024'
 
         np_payment_dates, np_cash_flows = create_semi_bond_cash_flows(
             np_market_close_date, 

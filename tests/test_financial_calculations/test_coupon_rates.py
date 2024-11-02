@@ -6,8 +6,7 @@ from financial_calculations.coupon_rates import (
     calculate_coupon_rate
 )
 from financial_calculations.forward_curves import (
-    bootstrap_forward_curve,
-    bootstrap_finer_forward_curve
+    ForwardCurve
 )
 
 class TestCalculateCouponRate(unittest.TestCase):
@@ -18,7 +17,7 @@ class TestCalculateCouponRate(unittest.TestCase):
     - Functionality when the start date matches the market close date.
     - Functionality when the start date is after the market close date.
     - Error handling when the start date is before the market close date.
-    - Validation that the calculated coupon rate is within valid bounds.
+    - Validation that the calculated coupon rate is within expected bounds.
     """
 
     def setUp(self):
@@ -38,10 +37,12 @@ class TestCalculateCouponRate(unittest.TestCase):
         self.par_value = 100
 
         # Generate forward curve using bootstrap_forward_curve function
-        self.forward_curve = bootstrap_forward_curve(self.cmt_data, self.market_close_date, self.par_value)
+        self.forward_curve = ForwardCurve(self.market_close_date)
+        self.forward_curve.bootstrap_forward_curve(self.cmt_data, self.par_value)
 
-        # Generate a finer forward curve using bootstrap_finer_forward_curve function
-        self.finer_forward_curve = bootstrap_finer_forward_curve(self.cmt_data, self.market_close_date, self.par_value)
+        # Generate a finer forward curve using calibrate_finer_forward_curve function
+        self.finer_forward_curve = ForwardCurve(self.market_close_date)
+        self.finer_forward_curve.calibrate_finer_forward_curve(self.cmt_data, self.par_value)
         
         # Set the maturity years for bond calculations
         self.maturity_years = 2
@@ -81,7 +82,7 @@ class TestCalculateCouponRate(unittest.TestCase):
 
     def test_coupon_rate_bounds(self):
         """
-        Test that the calculated coupon rate is within the valid range [0, 1].
+        Test that the calculated coupon rate is within the expected range [0, 1].
         Ensures that the returned coupon rate adheres to this range.
         """
         start_date = datetime(2024, 8, 10)
