@@ -1,6 +1,6 @@
 import numpy as np
+import pandas as pd
 from dateutil.relativedelta import relativedelta
-from utils import convert_to_datetime
 
 SEASONAL_FACTORS_ARRAY = np.array([
         0.75,  # January (month 1)
@@ -19,7 +19,7 @@ SEASONAL_FACTORS_ARRAY = np.array([
 
 def calculate_pccs(short_rates, spread=0.04):
     """
-    Calculate the Primary Credit Curve (PCC) by adding a fixed spread to the short rates.
+    Calculate the Primary Cuurent Coupons (PCCs) by adding a fixed spread to the short rates.
     
     Parameters:
     - short_rates (ndarray): Array of short rates from the Hull-White model simulation.
@@ -34,7 +34,7 @@ def refi_strength(spreads):
     """
     Calculate the refinancing strength based on an array of spread values.
 
-    The function applies a piecewise linear function (PWLF) to each spread value:
+    The function applies a piecewise linear function to each spread value:
     - Returns 0 if the spread is less than or equal to 0.
     - Increases linearly from 0 to 0.0425 for spreads between 0 and 0.015.
     - Returns a constant value of 0.0425 for spreads greater than or equal to 0.015.
@@ -58,15 +58,7 @@ def refi_strength(spreads):
     >>> refi_strength(spreads)
     array([0.    , 0.    , 0.02125, 0.0425 , 0.0425 ])
     """
-    return np.where(
-        spreads <= 0,
-        0,
-        np.where(
-            spreads >= 0.015,
-            0.0425,
-            0.0425 / 0.015 * spreads
-        )
-    )
+    return np.clip(0.0425 / 0.015 * spreads, 0.0, 0.0425)
 
 def demo(origination_date, num_months, base_smm = 0.005):
     """
@@ -146,8 +138,8 @@ def calculate_smms(pccs, coupon, market_close_date, origination_date, num_months
         raise ValueError("Length of PCCs is less than the specified number of months.")
 
     # Ensure dates are in datetime format
-    market_close_date = convert_to_datetime(market_close_date)
-    origination_date = convert_to_datetime(origination_date)
+    market_close_date = pd.to_datetime(market_close_date)
+    origination_date = pd.to_datetime(origination_date)
 
     # Calculate months difference between origination and market close
     delta = relativedelta(origination_date, market_close_date)

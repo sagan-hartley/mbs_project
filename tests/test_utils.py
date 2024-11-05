@@ -6,12 +6,68 @@ from dateutil.relativedelta import relativedelta
 from utils import (
     DISC_DAYS_IN_YEAR,
     MAX_EXTRAPOLATE_YRS,
+    days360,
     create_regular_dates_grid,
     years_from_reference,
+    step_interpolate,
     integral_knots,
     zcbs_from_deltas,
     zcbs_from_dates
 )
+
+class TestDays360(unittest.TestCase):
+    """
+    Unit tests for the days360 function.
+    """
+
+    def test_same_month(self):
+        """Test case where both dates are in the same month."""
+        d1 = datetime(2024, 10, 1)
+        d2 = datetime(2024, 10, 15)
+        self.assertEqual(days360(d1, d2), 14)
+    
+    def test_full_month(self):
+        """Test case where the second date is the last day of the month."""
+        d1 = datetime(2024, 10, 1)
+        d2 = datetime(2024, 10, 30)
+        self.assertEqual(days360(d1, d2), 29)
+
+    def test_first_day_is_31(self):
+        """Test case where the first date is on the 31st."""
+        d1 = datetime(2024, 10, 31)
+        d2 = datetime(2024, 11, 20)
+        self.assertEqual(days360(d1, d2), 20)
+
+    def test_second_day_is_31(self):
+        """Test case where the first date is on the 31st."""
+        d1 = datetime(2024, 10, 20)
+        d2 = datetime(2024, 9, 30)
+        d3 = datetime(2024, 8, 31)
+        d4 = datetime(2024, 10, 31)
+        self.assertEqual(days360(d1, d4), 10)
+        self.assertEqual(days360(d2, d4), 31)
+        self.assertEqual(days360(d3, d4), 61)
+
+    def test_different_months(self):
+        """Test case where the dates are in different months."""
+        d1 = datetime(2024, 10, 20)
+        d2 = datetime(2024, 11, 15)
+        d3 = datetime(2024, 12, 11)
+        self.assertEqual(days360(d1, d2), 25)
+        self.assertEqual(days360(d1, d3), 51)
+
+    def test_different_years(self):
+        """Test case where the dates are in different years."""
+        d1 = datetime(2024, 10, 20)
+        d2 = datetime(2025, 11, 15)
+        self.assertEqual(days360(d1, d2), 385)
+
+    def test_invalid_date_order(self):
+        """Test case where the first date is later than the second date."""
+        d1 = datetime(2024, 10, 1)
+        d2 = datetime(2024, 9, 30)
+        with self.assertRaises(AssertionError):
+            days360(d1, d2)
 
 class TestCreateRegularDatesGrid(unittest.TestCase):
     """
@@ -177,6 +233,68 @@ class TestYearsFromReference(unittest.TestCase):
         # We expect the results to be slightly off due to using the 365 day convention on a leap year
         expected = np.array([0.0, 1.00274, 2.00274, 0.49589])
         np.testing.assert_array_almost_equal(result, expected)
+
+class TestStepInterpolate(unittest.TestCase):
+    """
+    Unit tests for the step_interpolate function.
+    """
+
+    def test_basic_interpolation(self):
+        """Basic case where the query dates fall within the range of dates_step"""
+        dates_step = np.array(['2024-01-01', '2024-06-01', '2024-12-01'], dtype='datetime64[D]')
+        rates = np.array([0.02, 0.03, 0.04])
+        query_dates = np.array(['2024-02-01', '2024-07-01'], dtype='datetime64[D]')
+        
+        expected_rates = np.array([0.02, 0.03])  # Expected rates for the query dates
+        result = step_interpolate(dates_step, rates, query_dates)
+        np.testing.assert_array_equal(result, expected_rates)
+
+    def test_unsorted_dates_step(self):
+        """Test for unsorted dates_step (should raise ValueError)"""
+        dates_step = np.array(['2024-06-01', '2024-01-01', '2024-12-01'], dtype='datetime64[D]')
+        rates = np.array([0.03, 0.02, 0.04])
+        query_dates = np.array(['2024-02-01', '2024-07-01'], dtype='datetime64[D]')
+
+        with self.assertRaises(ValueError):
+            step_interpolate(dates_step, rates, query_dates)
+
+    def test_duplicate_dates_step(self):
+        """Test for duplicate values contained in dates_step (should raise ValueError)"""
+        dates_step = np.array(['2024-06-01', '2025-01-01', '2025-01-01'], dtype='datetime64[D]')
+        rates = np.array([0.03, 0.02, 0.04])
+        query_dates = np.array(['2024-02-01', '2024-07-01'], dtype='datetime64[D]')
+
+        with self.assertRaises(ValueError):
+            step_interpolate(dates_step, rates, query_dates)
+
+    def test_query_date_before_first_date(self):
+        """Test for query dates that are before the first element in dates_step"""
+        dates_step = np.array(['2024-01-01', '2024-06-01', '2024-12-01'], dtype='datetime64[D]')
+        rates = np.array([0.02, 0.03, 0.04])
+        query_dates = np.array(['2023-12-01'], dtype='datetime64[D]')
+
+        with self.assertRaises(ValueError):
+            step_interpolate(dates_step, rates, query_dates)
+
+    def test_query_date_equal_to_step_dates(self):
+        """Test for query dates that exactly match dates in dates_step"""
+        dates_step = np.array(['2024-01-01', '2024-06-01', '2024-12-01'], dtype='datetime64[D]')
+        rates = np.array([0.02, 0.03, 0.04])
+        query_dates = np.array(['2024-01-01', '2024-12-01'], dtype='datetime64[D]')
+
+        expected_rates = np.array([0.02, 0.04])  # Expected rates
+        result = step_interpolate(dates_step, rates, query_dates)
+        np.testing.assert_array_equal(result, expected_rates)
+
+    def test_query_dates_after_last_step_date(self):
+        """Test for query dates that are after the last element in dates_step"""
+        dates_step = np.array(['2024-01-01', '2024-06-01', '2024-12-01'], dtype='datetime64[D]')
+        rates = np.array([0.02, 0.03, 0.04])
+        query_dates = np.array(['2025-01-01'], dtype='datetime64[D]')
+
+        expected_rates = np.array([0.04])  # Should take the last rate
+        result = step_interpolate(dates_step, rates, query_dates)
+        np.testing.assert_array_equal(result, expected_rates)
 
 class TestIntegralKnots(unittest.TestCase):
     """

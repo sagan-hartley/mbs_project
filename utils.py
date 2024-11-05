@@ -4,6 +4,26 @@ import pandas as pd
 DISC_DAYS_IN_YEAR = 365.0
 MAX_EXTRAPOLATE_YRS = 100.0
 
+def days360(d1, d2):
+    """
+    Calculate the number of days between two dates using the 360-day year convention.
+    
+    Parameters:
+    d1 (datetime): The first date.
+    d2 (datetime): The second date, which should be later than or equal to the first date.
+    
+    Returns:
+    int: The number of days between the two dates, using the 30/360 day count convention.
+    """
+    assert d1 <= d2, "The first date must be before or equal to the second date."
+    
+    # Adjust day for 30/360 convention
+    d1_day = min(d1.day, 30)
+    d2_day = min(d2.day, 30) if d1_day < 30 else d2.day  # Adjust d2 only if d1 < 30
+
+    # Calculate the number of days using 360-day year convention
+    return (d2.year - d1.year) * 360 + (d2.month - d1.month) * 30 + (d2_day - d1_day)
+
 def create_regular_dates_grid(start_date, end_date, frequency='m'):
     """
     Create a finer grid of dates (e.g., daily, weekly, monthly) from the market close date 
@@ -98,6 +118,50 @@ def years_from_reference(ref_date, date_grid):
     # Calculate the difference in days between each date in date_grid and the reference date
     # and convert it to years by dividing by the number of days in a year.
     return np.array((date_grid - ref_date).days / DISC_DAYS_IN_YEAR)
+
+def step_interpolate(dates_step, rates, query_dates):
+    """
+    Perform step interpolation to find rates corresponding to the query_dates.
+
+    Parameters:
+    - dates_step (array-like or pd.DatetimeIndex): Array of dates representing the step function's change points (must be sorted).
+    - rates (array-like): Array of rates associated with each date in dates_step.
+    - query_dates (array-like or pd.DatetimeIndex): Array of dates for which to find the associated rates.
+
+    Returns:
+    - interpolated_rates: Array of rates corresponding to the query_dates.
+
+    Raises:
+    - ValueError: 
+        If there are duplicated dates in dates_step.
+        If dates_step is not sorted in ascending order.
+        If any query date is before the first element in dates_step.
+    """
+    # Convert to DatetimeIndex if inputs are not already in datetime format
+    dates_step = pd.to_datetime(dates_step)
+    query_dates = pd.to_datetime(query_dates)
+    
+    # Ensure rates are in a numpy array
+    rates = np.array(rates)
+    
+    # Check if dates_step is sorted and that there are no duplicate dates
+    if not dates_step.is_monotonic_increasing or dates_step.has_duplicates:
+        raise ValueError("dates_step must be sorted in ascending order without duplicate entries.")
+
+    # Convert DatetimeIndex to numpy datetime64 for efficient processing
+    dates_step_np = dates_step.values
+    query_dates_np = query_dates.values
+
+    # Use searchsorted to find indices of the step dates less than or equal to query dates
+    indices = np.searchsorted(dates_step_np, query_dates_np, side='right') - 1
+
+    if np.any(indices < 0):
+        raise ValueError("No query date should be before the first element in dates_step")
+
+    # Return the corresponding rates
+    interpolated_rates = rates[indices]
+
+    return interpolated_rates
 
 def integral_knots(date_grid, rate_grid):
     """

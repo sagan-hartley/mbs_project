@@ -1,171 +1,214 @@
 import unittest
-from datetime import datetime
 import numpy as np
-from financial_calculations.forward_curves import ForwardCurve
+import pandas as pd
+from financial_calculations.forward_curves import (
+    bootstrap_forward_curve,
+    calibrate_fine_curve
+)
+from financial_calculations.cash_flows import (
+    StepDiscounter,
+    value_cash_flows
+)
+from financial_calculations.bonds import (
+    SemiBondContract,
+    create_semi_bond_cash_flows
+)
 
 class TestBootstrapForwardCurve(unittest.TestCase):
     """
-    Unit test class for testing the `bootstrap_forward_curve` function.
-
-    The tests include:
-    - Basic functionality with typical bond inputs.
-    - Effect of different initial guesses for the optimization.
-    - Handling of edge cases like high coupon rates, long maturities.
-    - Consistency of results across multiple runs.
-    - Checking equivalency of results when using `datetime` and `datetime64[D]`.
+    Test class for the bootstrap_forward_curve function.
+    Includes checks for sorting, rate calculation, and edge cases.
     """
 
-    def setUp(self):
+    def sample_cmt_data(self):
         """
-        Set up common data used across multiple tests.
-        
-        This includes a set of bond data (`cmt_data`), a market close date, 
-        and a balance for the bonds.
+        Provide sample CMT data with unsorted effective dates and maturity years.
+
+        Returns:
+            list: Unsorted sample CMT data for testing.
         """
-        # Test data for bond maturities and coupon rates
-        self.cmt_data = [
-            (1, 0.03),  # 1-year bond, 3% coupon rate
-            (2, 0.04),  # 2-year bond, 4% coupon rate
-            (3, 0.05)   # 3-year bond, 5% coupon rate
+        return [
+            (pd.Timestamp("2024-01-01"), 4, 0.04),  # Jan 1, 2024, 4-year bond, 4% coupon
+            (pd.Timestamp("2023-01-01"), 3, 0.03),  # Jan 1, 2023, 3-year bond, 3% coupon
+            (pd.Timestamp("2022-01-01"), 1, 0.02)   # Jan 1, 2022, 1-year bond, 2% coupon
         ]
-        # Market close date in datetime format
-        self.market_close_date = datetime(2024, 8, 10)
-        # Balance for the bonds
-        self.balance = 100
-        # Initialize a ForwardCurve object
-        self.curve = ForwardCurve(self.market_close_date)
 
-    def test_basic_bootstrap(self):
+    def test_sorted_cmt_data(self):
         """
-        Test basic functionality of `bootstrap_forward_curve` with standard input.
+        Test that bootstrap_forward_curve function sorts CMT data by effective date + maturity.
+
+        Checks that rate dates returned by the function are in the expected ascending order.
+        """
+        market_close_date = "2022-01-01"
+        balance = 100.0
+        discounter = bootstrap_forward_curve(market_close_date, self.sample_cmt_data(), balance)
         
-        This checks the length of dates and rates assigned by the method.
-        """
-        self.curve.bootstrap_forward_curve(self.cmt_data, self.balance)
-
-        # Check that the number of disc rate dates equals the number of maturities + 1 (for the market close date)
-        self.assertEqual(
-            len(self.curve.dates), len(self.cmt_data) + 1
+        expected_dates = np.append(pd.to_datetime(market_close_date), sorted([
+            date + pd.DateOffset(years=maturity) for date, maturity, _ in self.sample_cmt_data()
+            ])
         )
-        # Check that the number of disc rates equals the number of maturities
-        self.assertEqual(len(self.curve.rates), len(self.cmt_data))
+        assert all(discounter.dates == expected_dates), "Rate dates should be sorted by effective date + maturity."
 
-        # We will test that the actual values of the forward curve rates are correct in tests/test_financial_calculations/test_coupon_rates.py
-        # by comparing these rates to the coupons produced when the start date of the coupon is on a disc rate date
-   
-    def test_initial_guess(self):
+    def test_rate_values_non_negative(self):
         """
-        Test the effect of varying initial guesses on the results.
+        Ensure that all rate values in the forward curve are non-negative.
+
+        Verifies that the function produces valid, non-negative rate values.
+        """
+        market_close_date = "2022-01-01"
+        balance = 100.0
+        discounter = bootstrap_forward_curve(market_close_date, self.sample_cmt_data(), balance)
         
-        This checks whether different initial guesses for the optimization 
-        yield consistent outputs within valid bounds.
-        """
-        # Different initial guesses for the optimization
-        initial_guesses = [0.01, 0.05, 0.0, 1.0]
-        for guess in initial_guesses:
-            self.curve.bootstrap_forward_curve(
-                self.cmt_data, self.balance, guess
-            )
+        assert np.all(discounter.rates >= 0), "Rate values should be non-negative."
 
-            # Check the length of disc rate dates and rates
-            self.assertEqual(len(self.curve.dates), len(self.cmt_data) + 1)
-            self.assertEqual(len(self.curve.rates), len(self.cmt_data))
+    def test_curve_matches_balance_at_settlement(self):
+        """
+        Test that the calculated curve value matches the balance at the settlement date.
 
-    def test_edge_cases(self):
+        Validates that the present value of each bond's cash flows is close to the balance.
         """
-        Test edge cases with high coupon rates, low coupon rates, and long maturities.
-        
-        This ensures the function behaves as expected for extreme values.
+        market_close_date = "2022-01-01"
+        balance = 100.0
+        discounter = bootstrap_forward_curve(market_close_date, self.sample_cmt_data(), balance)
+        print(discounter.rates)
+
+        for effective_date, maturity_years, coupon in self.sample_cmt_data():
+            semi_bond = SemiBondContract(effective_date, maturity_years * 12, coupon, balance)
+            semi_bond_flows = create_semi_bond_cash_flows(semi_bond)
+            bond_value = value_cash_flows(discounter, semi_bond_flows, market_close_date)
+            
+            assert np.isclose(bond_value, balance, atol=1e-2), f"Bond value should be close to balance, got {bond_value}."
+
+    def test_minimization_failure_handling(self):
         """
-        edge_cases = [
-            [(1, 0.99)],  # Very high coupon rate
-            [(2, 0.1)],   # Low coupon rate
-            [(10, 0.01)]  # Long maturity period (10 years)
+        Verify that the function raises a ValueError if minimization fails to converge.
+
+        Simulates a failure scenario by using an unrealistic coupon rate to trigger a minimization failure.
+        """
+        market_close_date = "2022-01-01"
+        balance = 100.0
+        faulty_cmt_data = [
+            (pd.Timestamp("2022-01-01"), 1, 0.99)  # Unrealistically high coupon to force failure
         ]
-        for cmt_data in edge_cases:
-            self.curve.bootstrap_forward_curve(cmt_data, self.balance)
 
-            # Check the length of disc rate dates and rates
-            self.assertEqual(len(self.curve.dates), len(cmt_data) + 1)
-            self.assertEqual(len(self.curve.rates), len(cmt_data))
+        try:
+            bootstrap_forward_curve(market_close_date, faulty_cmt_data, balance)
+        except ValueError as e:
+            assert str(e) == "Minimization did not converge.", "Expected minimization to fail."
 
-    def test_consistency(self):
+    def test_edge_case_single_bond(self):
         """
-        Test that the function produces consistent results when run multiple times.
+        Test the function with only one bond in CMT data.
+
+        Ensures that it processes correctly and includes the market close date and bond maturity.
+        """
+        market_close_date = "2022-01-01"
+        balance = 100.0
+        single_bond_data = [(pd.Timestamp("2022-01-01"), 1, 0.03)]
         
-        This verifies that the function is deterministic and returns the same results 
-        across repeated runs with the same input.
+        discounter = bootstrap_forward_curve(market_close_date, single_bond_data, balance)
+        
+        assert len(discounter.dates) == 2, "Rate dates should include market close date and bond maturity."
+        assert len(discounter.rates) == 2, "Rate values should include initial and single bootstrapped rate."
+
+    def test_consistent_last_rate_extension(self):
         """
-        for _ in range(10):
-            self.curve.bootstrap_forward_curve(self.cmt_data, self.balance)
-            # Define a second curve to test consistency
-            curve_2 = ForwardCurve(self.market_close_date)
-            curve_2.bootstrap_forward_curve(self.cmt_data, self.balance)
+        Verify that the last rate is extended correctly at the end of the curve.
 
-            # Ensure the disc rate dates are exactly the same across runs
-            np.testing.assert_array_equal(self.curve.dates, curve_2.dates)
-            # Ensure the disc rates are nearly equal across runs (accounting for floating point precision)
-            np.testing.assert_array_almost_equal(self.curve.rates, curve_2.rates)
+        Checks that the last two rates in the forward curve are the same.
+        """
+        market_close_date = "2022-01-01"
+        balance = 100.0
+        discounter = bootstrap_forward_curve(market_close_date, self.sample_cmt_data(), balance)
+        
+        assert discounter.rates[-1] == discounter.rates[-2], "Last rate should be extended at curve end."
 
+    def test_duplicate_maturity_dates_raises_error(self):
+        """
+        Test that bootstrap_forward_curve raises a ValueError if duplicate 
+        maturity dates are present in the cmt_data.
+        """
+        market_close_date = "2024-01-01"
+        balance = 1000
+        initial_guess = 0.04
 
-class TestCalibrateFinerForwardCurve(unittest.TestCase):
+        # Create duplicate maturity dates in cmt_data
+        cmt_data = [
+            (pd.Timestamp("2024-01-01"), 2, 0.05),  # Matures on 01/01/2026
+            (pd.Timestamp("2025-01-01"), 1, 0.04),  # Also matures on 01/01/2026
+        ]
+
+        with self.assertRaises(ValueError) as context:
+            bootstrap_forward_curve(market_close_date, cmt_data, balance, initial_guess)
+
+        # Check that the error message contains information about duplicate dates
+        self.assertIn("Duplicate maturity dates cannot exist for this bootstrapping method.", str(context.exception))
+
+class TestCalibrateFineCurve(unittest.TestCase):
     """
-    Unit test class for testing the `calibrate_finer_forward_curve` function.
-
-    The tests include:
-    - Basic functionality with different frequencies (monthly, weekly).
-    - Handling of invalid frequency input.
-    - Consistency with different market close date formats.
+    Unit tests for the calibrate_fine_curve function, which calibrates a forward curve by 
+    bootstrapping discount rates for bonds with regular intervals. Tests cover basic functionality, 
+    handling of duplicate maturity dates, and error cases.
     """
 
     def setUp(self):
-        """
-        Set up common data used across multiple tests.
-        
-        This includes a set of bond data (`cmt_data`), a market close date, 
-        and a balance for the bonds.
-        """
-        # Example bond data
-        self.cmt_data = [(1, 0.03), (2, 0.04), (3, 0.05)]
-        # Market close date in datetime format
-        self.market_close_date = datetime(2024, 8, 10)
-        # Balance for the bonds
-        self.balance = 100
-        # Initialize a ForwardCurve object
-        self.curve = ForwardCurve(self.market_close_date)
+        # Common setup for test data
+        self.market_close_date = pd.Timestamp('2024-01-01')
+        self.balance = 1000.0
+        self.frequency = 'm'
+        self.initial_guess = 0.04
+        self.smoothing_error_weight = 100.0
 
-    def test_monthly_frequency(self):
-        """
-        Test the function with monthly frequency.
-        
-        This verifies that the number of dates and rates returned is correct.
-        """
-        self.curve.calibrate_finer_forward_curve(self.cmt_data, self.balance, frequency='monthly')
-        
-        # We will test that the actual values of the forward curve rates are correct in tests/test_financial_calculations/test_coupon_rates.py
-        # by comparing these rates to the coupons produced when the start date of the coupon is on a disc rate date
-        self.assertEqual(len(self.curve.dates), 37)  # Expecting 3 years of monthly rates
-        self.assertEqual(len(self.curve.rates), 37) # These lengths are (12*3) + 1 (start date)
+    def test_basic_calibration(self):
+        """Test basic functionality of calibrate_fine_curve with unique maturity dates."""
+        cmt_data = [
+            (pd.Timestamp('2024-01-01'), 1, 0.05),  # Bond 1: 1-year maturity
+            (pd.Timestamp('2024-01-01'), 2, 0.06),  # Bond 2: 2-year maturity
+            (pd.Timestamp('2024-01-01'), 3, 0.07)   # Bond 3: 3-year maturity
+        ]
 
-    def test_weekly_frequency(self):
-        """
-        Test the function with weekly frequency.
+        result = calibrate_fine_curve(self.market_close_date, cmt_data, self.balance, self.frequency, self.initial_guess, self.smoothing_error_weight)
         
-        This verifies that the number of dates and rates returned is correct.
-        """
-        self.curve.calibrate_finer_forward_curve(self.cmt_data, self.balance, frequency='weekly')
+        # Ensure result is an instance of StepDiscounter
+        self.assertIsInstance(result, StepDiscounter)
         
-        self.assertEqual(len(self.curve.dates), 157)  # Expecting 3 years of weekly rates (52*3) + 1 (start date)
-        self.assertEqual(len(self.curve.rates), 157)
+        # Check that the rate dates and rates are aligned with the maturity dates
+        rate_dates = result.dates
+        expected_maturity_dates = [
+            pd.Timestamp('2025-01-01'),
+            pd.Timestamp('2026-01-01'),
+            pd.Timestamp('2027-01-01')
+        ]
+        
+        self.assertTrue(all(date in rate_dates for date in expected_maturity_dates), "Rate dates do not match expected maturity dates.")
 
-    def test_invalid_frequency(self):
-        """
-        Test the function with an invalid frequency input.
+    def test_duplicate_maturity_dates(self):
+        """Test that calibrate_fine_curve raises a ValueError for duplicate maturity dates."""
+        cmt_data = [
+            (pd.Timestamp('2024-01-01'), 2, 0.05),  # Bond 1: 2-year maturity
+            (pd.Timestamp('2024-01-01'), 2, 0.06)   # Bond 2: Duplicate 2-year maturity
+        ]
+
+        with self.assertRaises(ValueError) as context:
+            calibrate_fine_curve(self.market_close_date, cmt_data, self.balance, self.frequency, self.initial_guess, self.smoothing_error_weight)
         
-        This ensures that the function raises a ValueError for unsupported frequencies.
-        """
-        with self.assertRaises(ValueError):
-            self.curve.calibrate_finer_forward_curve(self.cmt_data, self.balance, frequency='daily')
+        # Check that the error message is as expected
+        self.assertEqual(str(context.exception), "Duplicate maturity dates found in the input data. Ensure each bond has a unique maturity date.")
+
+    def test_non_convergence_error(self):
+        """Test that calibrate_fine_curve raises a ValueError if minimization does not converge."""
+        # Intentionally problematic data to induce non-convergence
+        cmt_data = [
+            (pd.Timestamp('2024-01-01'), 1, 0.05),
+            (pd.Timestamp('2024-01-01'), 2, 0.99),
+            (pd.Timestamp('2024-01-01'), 3, 0.07)
+        ]
+
+        # Using an extremely high smoothing error weight to induce non-convergence
+        with self.assertRaises(ValueError) as context:
+            calibrate_fine_curve(self.market_close_date, cmt_data, self.balance, self.frequency, self.initial_guess, smoothing_error_weight=1e20)
+
+        self.assertEqual(str(context.exception), "Minimization did not converge. Try adjusting the initial guess or checking input data.")
 
 if __name__ == '__main__':
     unittest.main()
