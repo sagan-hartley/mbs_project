@@ -127,7 +127,7 @@ def evaluate_mbs_short_rate_paths(mbs_data, short_rates, short_rate_dates):
         mbs_id, balance, num_months, gross_annual_coupon, net_annual_coupon, settle_date, origination_date, payment_delay = mbs
 
         # Calculate the necessary scheduled balance data to value and price the cash flows
-        scheduled_balances = calculate_scheduled_balances(balance, origination_date, num_months, gross_annual_coupon, payment_delay)
+        scheduled_balances = calculate_scheduled_balances(balance, origination_date, num_months, gross_annual_coupon, payment_delay=payment_delay)
 
         # Calculate the Primary Current Coupons (PCCs) and SMMs based on the original short rates
         pccs = calculate_pccs(short_rates)
@@ -139,9 +139,9 @@ def evaluate_mbs_short_rate_paths(mbs_data, short_rates, short_rate_dates):
             actual_balances = calculate_actual_balances(scheduled_balances, smm_path, net_annual_coupon)
 
             # Define an instance of StepDiscounter based on the current short rate path
-            discounter = StepDiscounter(short_rate_dates, short_rates[index])
+            discounter = StepDiscounter(short_rate_dates, short_rates[index, :])
 
-            # Evaluate the cash flows for the current MBS using the actual balances, SMM, and short rates data
+            # Evaluate the cash flows for the current MBS using the actual balances, SMM, and current discounter
             wal, val, price = evaluate_cash_flows(actual_balances, discounter, settle_date, net_annual_coupon)
             
             # Store the calculated values
