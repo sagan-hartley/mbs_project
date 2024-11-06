@@ -70,7 +70,6 @@ class TestBootstrapForwardCurve(unittest.TestCase):
         market_close_date = "2022-01-01"
         balance = 100.0
         discounter = bootstrap_forward_curve(market_close_date, self.sample_cmt_data(), balance)
-        print(discounter.rates)
 
         for effective_date, maturity_years, coupon in self.sample_cmt_data():
             semi_bond = SemiBondContract(effective_date, maturity_years * 12, coupon, balance)
