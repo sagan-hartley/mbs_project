@@ -9,6 +9,7 @@ from utils import (
     days360,
     create_regular_dates_grid,
     years_from_reference,
+    integer_months_from_reference,
     step_interpolate,
     integral_knots,
     zcbs_from_deltas,
@@ -233,6 +234,54 @@ class TestYearsFromReference(unittest.TestCase):
         # We expect the results to be slightly off due to using the 365 day convention on a leap year
         expected = np.array([0.0, 1.00274, 2.00274, 0.49589])
         np.testing.assert_array_almost_equal(result, expected)
+
+class TestIntegerMonthsFromReference(unittest.TestCase):
+    """
+    Test suite for the integer_months_from_reference function, which calculates
+    the number of whole months between two dates.
+    """
+
+    def test_standard_case(self):
+        """Test with dates exactly one year apart."""
+        start_date = datetime(2023, 1, 1)
+        end_date = datetime(2024, 1, 1)
+        result = integer_months_from_reference(start_date, end_date)
+        self.assertEqual(result, 12)
+
+    def test_partial_months(self):
+        """Test with dates that include partial months, ensuring only whole months are counted."""
+        start_date = datetime(2023, 1, 1)
+        end_date = datetime(2023, 2, 15)
+        result = integer_months_from_reference(start_date, end_date)
+        self.assertEqual(result, 1)
+
+    def test_same_month(self):
+        """Test with start and end dates in the same month."""
+        start_date = datetime(2023, 5, 10)
+        end_date = datetime(2023, 5, 25)
+        result = integer_months_from_reference(start_date, end_date)
+        self.assertEqual(result, 0)
+
+    def test_different_years(self):
+        """Test with dates spanning multiple years, ensuring months are correctly totaled."""
+        start_date = datetime(2021, 5, 10)
+        end_date = datetime(2023, 5, 10)
+        result = integer_months_from_reference(start_date, end_date)
+        self.assertEqual(result, 24)
+
+    def test_start_date_after_end_date(self):
+        """Test with a start date that comes after the end date, expecting a negative result."""
+        start_date = datetime(2024, 1, 1)
+        end_date = datetime(2023, 1, 1)
+        result = integer_months_from_reference(start_date, end_date)
+        self.assertEqual(result, -12)
+
+    def test_same_day(self):
+        """Test with the start and end date being the same day, expecting zero months."""
+        start_date = datetime(2023, 7, 7)
+        end_date = datetime(2023, 7, 7)
+        result = integer_months_from_reference(start_date, end_date)
+        self.assertEqual(result, 0)
 
 class TestStepInterpolate(unittest.TestCase):
     """

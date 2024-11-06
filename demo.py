@@ -3,6 +3,7 @@ import numpy as np
 import seaborn as sns
 import pandas as pd
 import matplotlib.pyplot as plt
+from utils import integer_months_from_reference
 from financial_models.hull_white import (
     hull_white_simulate_from_curve
 )
@@ -25,7 +26,9 @@ from financial_calculations.mbs import (
 from financial_calculations.cash_flows import (
     StepDiscounter,
     value_cash_flows,
-    evaluate_cash_flows
+    evaluate_cash_flows,
+    calculate_dv01,
+    calculate_convexity
 )
 
 SETTLE_DATE_IDX = 5
@@ -111,7 +114,7 @@ def evaluate_mbs_short_rate_paths(mbs_data, short_rates, short_rate_dates):
     Parameters:
     - mbs_data (list): A list containing details of the MBSs including ID, balance, number of months, gross and net annual coupons, accrual dates, single monthly mortality (SMM) rate, and payment delay days.
     - short_rates (ndarray): Array of short rates from the simulation.
-    - short_rate_dates (tuple): Array of dates corresponding to the short rates.
+    - short_rate_dates (ndarray): Array of dates corresponding to the short rates.
 
     Returns:
     - results (list): A list of dictionaries containing MBS ID, WALs, expected WAL, values, expected value, prices, expected price, and standard deviations for each MBS.
@@ -194,14 +197,15 @@ def pathwise_zcb_eval(maturity_date, short_rate_paths, discount_rate_dates):
     (zcb_price, zcb_std) : tuple
          The average present value (price) of the ZCB across all paths and the standard deviation 
     """
+    # Get the number of short rate paths and initialize an array to store ZCB present values
     num_paths = short_rate_paths.shape[0]
     present_values = np.zeros(num_paths)
 
+    # Define the market close date and the term in months of the bond from input data
     market_close_date = discount_rate_dates[0]
-    delta = relativedelta(maturity_date, market_close_date)
-    term_in_months = delta.years * 12 + delta.months
+    term_in_months = integer_months_from_reference(market_close_date, maturity_date)
 
-    # Set up a single cash flow of 1 at the maturity date (for a ZCB) by using a SemiBondContract with zero coupon
+    # Set up a single cash flow of 100 at the maturity date (for a ZCB) by using a SemiBondContract with zero coupon
     cash_flows = create_semi_bond_cash_flows(SemiBondContract(market_close_date, term_in_months, 0))
 
     # Loop over each path to calculate present value using the discount_cash_flows function
@@ -345,9 +349,8 @@ def main():
     # Plot the ZCB prices based on short rates from the Hull-White simulation
     plot_hull_white_zcb_prices(hull_white)
 
-    # Print the 30-yr rate variance of antithetic vs regular sampling Hull-White simmulations
-    print(f"Antithetic Sampling 30-yr Rate Variance: {hw_low_paths_2[3][-1]}, No Antithetic Sampling 30-yr Rate Variance: {hw_low_paths_1[3][-1]}")
-
+    # Define a bump amount to create Hull-White simulations where the forward curve has been shocked up and down by this amount
+    # These simulation results will be used to calculate the DV01 and convexity for the value of each MBS
     bump_amount = 0.0025
     bumped_up_curve = fine_curve
     bumped_up_curve.rates = bumped_up_curve.rates + bump_amount
@@ -356,32 +359,42 @@ def main():
     bumped_up_hw = hull_white_simulate_from_curve(alpha, sigma, bumped_up_curve, short_rate_dates, start_rate, num_iterations)
     bumped_down_hw = hull_white_simulate_from_curve(alpha, sigma, bumped_down_curve, short_rate_dates, start_rate, num_iterations)
 
-    # Extract the short rate paths from the Hull-White simulation
+    # Extract the short rate paths from the Hull-White simulations
     short_rates = hull_white[1]
+    no_antithetic_short_rates = hw_no_antithetic[1]
     bumped_up_short_rates = bumped_up_hw[1]
     bumped_down_short_rates = bumped_down_hw[1]
 
     # Simulate expected WALs, values, prices, and their standard deviations for each set of short rates
     simulated_mbs_values = evaluate_mbs_short_rate_paths(mbs_data, short_rates, short_rate_dates)
-    bumped_up_vals = evaluate_mbs_short_rate_paths(mbs_data, bumped_up_short_rates, short_rate_dates)
-    bumped_down_vals = evaluate_mbs_short_rate_paths(mbs_data, bumped_down_short_rates, short_rate_dates)
-
-    """
-    def calculate_expected_dv01(bumped_vals, vals, bump_amount):
-        assert len(vals) == len(bumped_vals)
-        dvs = []
-        for i in range(len(vals)):
-            dvs.append(calculate_dv(bumped_vals[i], vals[i], bump_amount))
-        dv01 = np.mean(dvs)
-        return dv01 """
+    no_antithetic_mbs_values = evaluate_mbs_short_rate_paths(mbs_data, no_antithetic_short_rates, short_rate_dates)
+    bumped_up_values = evaluate_mbs_short_rate_paths(mbs_data, bumped_up_short_rates, short_rate_dates)
+    bumped_down_values = evaluate_mbs_short_rate_paths(mbs_data, bumped_down_short_rates, short_rate_dates)
 
     for index, mbs in enumerate(simulated_mbs_values):
+        # Print the evalution results for each MBS in the simulated_mbs_values
         print(f"MBS_ID: {mbs['mbs_id']}, Expected WAL: {mbs['expected_wal']}, Expected Value: {mbs['expected_value']}, "
               f"Expected Price: {mbs['expected_price']}, \nWAL Path STDev: {mbs['wal_stdev']}, "
               f"Value Path STDev: {mbs['value_stdev']}, Price Path STDev: {mbs['price_stdev']}")
         
-        #dv01 = calculate_expected_dv01(bumped_up_vals[index]['vals'], mbs['vals'], bump_amount)
-        #print(f"Expected DV01: {dv01}")
+        # Print the price variance of antithetic vs regular sampling Hull-White simmulations
+        print(f"Antithetic Sampling Price Variance: {mbs['price_stdev'] ** 2}, No Antithetic Sampling Price Variance: {no_antithetic_mbs_values[index]['price_stdev'] ** 2}")
+
+        # Extract the value arrays for the MBS based from the normal and bumped simulations
+        vals = mbs['vals']
+        bumped_up_vals = bumped_up_values[index]['vals']
+        bumped_down_vals = bumped_down_values[index]['vals']
+
+        # Calculate and print the expected DV01 by averaging the DV01s from bumping up and down 25 basis points
+        # Note that we multiply bump_amount by 100 to convert from decimal to basis points
+        dv01 = (calculate_dv01(bumped_up_vals, vals, bump_amount*100) +
+                calculate_dv01(vals, bumped_down_vals, bump_amount*100)) / 2
+        print(f"Expected DV01: {dv01}")
+
+        # Calculate and print the convexity measure from the normal and bumped simulation values
+        # Note that like in the DV01 calculation, we multiply bump_amount by 100 to convert from decimal to basis points
+        convexity = calculate_convexity(vals, bumped_up_vals, bumped_down_vals, bump_amount*100)
+        print(f"Convexity: {convexity}")
 
 if __name__ == '__main__':
     main()

@@ -463,3 +463,101 @@ def evaluate_cash_flows(cash_flows, discounter, settle_date, net_annual_interest
 
     # Return the WAL, present value, and price of the cash flows as a tuple
     return wal, value, price
+
+def calculate_dv01(bumped_vals, vals, bump_amount):
+    """
+    Calculate the DV01 (Dollar Value of a 01), which represents the price change
+    for a 1 basis point shift in yield.
+
+    Parameters:
+    -----------
+    bumped_vals : array-like
+        Array of values when rates are bumped by a specified amount.
+    vals : array-like
+        Array of original values without the bump.
+    bump_amount : float
+        The amount by which rates were bumped to obtain `bumped_vals`.
+
+    Returns:
+    --------
+    float
+        The average DV01 value, calculated as the mean sensitivity per unit change in yield.
+
+    Raises:
+    -------
+    ValueError
+        If `bumped_vals` and `vals` do not have the same shape.
+    ZeroDivisionError
+        If 'bump_amount' is 0.
+    """
+    # Convert inputs to Numpy arrays if they are not already
+    bumped_vals = np.array(bumped_vals)
+    vals = np.array(vals)
+
+    # Check for shape compatibility
+    if bumped_vals.shape != vals.shape:
+        raise ValueError("bumped_vals and vals must have the same shape.")
+    
+    # Check bump_amount is nonzero
+    if bump_amount == 0:
+        raise ZeroDivisionError("bump_amount cannot be zero.")
+    
+    # Calculate DV01
+    dv01 = np.mean((bumped_vals - vals) / bump_amount)
+    return dv01
+
+def calculate_convexity(vals, bumped_up_vals, bumped_down_vals, bump_amount):
+    """
+    Calculate the convexity of a series of values based on mean values of the original,
+    bumped-up, and bumped-down arrays.
+
+    Convexity is calculated as:
+        ((mean(bumped_up_vals) - 2 * mean(vals) + mean(bumped_down_vals)) /
+         (mean(vals) * (bump_amount ** 2)))
+
+    Parameters
+    ----------
+    vals : array-like
+        Original array of values.
+    bumped_up_vals : array-like
+        Array of values with a positive bump applied.
+    bumped_down_vals : array-like
+        Array of values with a negative bump applied.
+    bump_amount : float
+        The amount of the bump applied to generate `bumped_up_vals` and `bumped_down_vals`.
+
+    Returns
+    -------
+    float
+        The convexity measure.
+
+    Raises
+    ------
+    ZeroDivisionError
+        If `bump_amount` is zero.
+    ValueError
+        If input arrays do not have the same shape.
+    """
+
+    # Convert inputs to numpy arrays if they aren't already
+    vals = np.asarray(vals)
+    bumped_up_vals = np.asarray(bumped_up_vals)
+    bumped_down_vals = np.asarray(bumped_down_vals)
+
+    # Check that arrays have the same shape
+    if vals.shape != bumped_up_vals.shape or vals.shape != bumped_down_vals.shape:
+        raise ValueError("All input arrays must have the same shape.")
+
+    # Raise ZeroDivisionError for zero bump amount
+    if bump_amount == 0:
+        raise ZeroDivisionError("Bump amount must be non-zero.")
+
+    # Calculate the means of each array
+    mean_vals = np.mean(vals)
+    mean_bumped_up = np.mean(bumped_up_vals)
+    mean_bumped_down = np.mean(bumped_down_vals)
+
+    # Calculate convexity using the mean values
+    convexity = (mean_bumped_up - 2 * mean_vals + mean_bumped_down) / (mean_vals * (bump_amount ** 2))
+
+    return convexity

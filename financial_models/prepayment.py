@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from dateutil.relativedelta import relativedelta
+from utils import integer_months_from_reference
 
 SEASONAL_FACTORS_ARRAY = np.array([
         0.75,  # January (month 1)
@@ -141,9 +142,8 @@ def calculate_smms(pccs, coupon, market_close_date, origination_date, num_months
     market_close_date = pd.to_datetime(market_close_date)
     origination_date = pd.to_datetime(origination_date)
 
-    # Calculate months difference between origination and market close
-    delta = relativedelta(origination_date, market_close_date)
-    total_months_diff = delta.years * 12 + delta.months
+    # Calculate integer months difference between origination and market close
+    total_months_diff = integer_months_from_reference(market_close_date, origination_date)
 
     # Adjust PCCs for the relevant term window
     pccs = pccs[:, total_months_diff:total_months_diff + num_months]

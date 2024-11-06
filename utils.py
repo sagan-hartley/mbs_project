@@ -1,3 +1,4 @@
+from dateutil.relativedelta import relativedelta
 import numpy as np
 import pandas as pd
 
@@ -118,6 +119,30 @@ def years_from_reference(ref_date, date_grid):
     # Calculate the difference in days between each date in date_grid and the reference date
     # and convert it to years by dividing by the number of days in a year.
     return np.array((date_grid - ref_date).days / DISC_DAYS_IN_YEAR)
+
+def integer_months_from_reference(start_date, end_date):
+    """
+    Calculate the integer number of months between two dates.
+
+    Parameters
+    ----------
+    start_date : datetime
+        The starting date.
+    end_date : datetime
+        The ending date.
+
+    Returns
+    -------
+    int
+        The number of whole months from start_date to end_date.
+    """
+    # Calculate the difference in years and months between the two dates
+    delta = relativedelta(end_date, start_date)
+    
+    # Convert the delta to total months
+    term_in_months = delta.years * 12 + delta.months
+
+    return term_in_months
 
 def step_interpolate(dates_step, rates, query_dates):
     """

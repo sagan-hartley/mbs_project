@@ -11,7 +11,9 @@ from financial_calculations.cash_flows import (
     price_cash_flows,
     get_balance_at_settle,
     calculate_weighted_average_life,
-    get_last_coupon_date
+    get_last_coupon_date,
+    calculate_dv01,
+    calculate_convexity
 )
 from utils import (
     days360
@@ -469,5 +471,115 @@ class TestGetLastCouponDate(unittest.TestCase):
         result = get_last_coupon_date(empty_cash_flow_data, settle_date)
         self.assertEqual(result, settle_date)
 
-if __name__ == '__main__':
+class TestCalculateDV01(unittest.TestCase):
+    """
+    Test suite for the `calculate_dv01` function, which calculates the DV01
+    (Dollar Value of a 01) based on bumped and original values and a bump amount.
+    """
+
+    def test_typical_case(self):
+        """Test with typical values and a positive bump amount."""
+        vals = np.array([100, 105, 110])
+        bumped_vals = np.array([99.9, 104.9, 109.9])
+        bump_amount = 0.01
+        expected_dv01 = -10.0
+        self.assertAlmostEqual(calculate_dv01(bumped_vals, vals, bump_amount), expected_dv01)
+
+    def test_zero_bump_amount(self):
+        """Test that a zero bump amount raises a ZeroDivisionError."""
+        vals = np.array([100, 105, 110])
+        bumped_vals = np.array([99.9, 104.9, 109.9])
+        bump_amount = 0.0
+        with self.assertRaises(ZeroDivisionError):
+            calculate_dv01(bumped_vals, vals, bump_amount)
+
+    def test_negative_bump_amount(self):
+        """Test with a negative bump amount to verify correct handling of sign."""
+        vals = np.array([100, 105, 110])
+        bumped_vals = np.array([100.1, 105.1, 110.1])
+        bump_amount = -0.01
+        expected_dv01 = -10.0
+        self.assertAlmostEqual(calculate_dv01(bumped_vals, vals, bump_amount), expected_dv01)
+
+    def test_list_input(self):
+        """Test with list inputs to ensure conversion to NumPy arrays is handled properly"""
+        vals = [100, 105, 110]
+        bumped_vals = [99.9, 104.9, 109.9]
+        bump_amount = 0.01
+        expected_dv01 = -10.0
+        self.assertAlmostEqual(calculate_dv01(bumped_vals, vals, bump_amount), expected_dv01)
+
+    def test_identical_values(self):
+        """Test with identical bumped and original values to check for zero DV01."""
+        vals = np.array([100, 105, 110])
+        bumped_vals = np.array([100, 105, 110])
+        bump_amount = 0.01
+        expected_dv01 = 0.0
+        self.assertEqual(calculate_dv01(bumped_vals, vals, bump_amount), expected_dv01)
+
+    def test_array_length_mismatch(self):
+        """Test that differing lengths between `bumped_vals` and `vals` raises a ValueError."""
+        vals = np.array([100, 105, 110])
+        bumped_vals = np.array([100, 105])  # Different length
+        bump_amount = 0.01
+        with self.assertRaises(ValueError):
+            calculate_dv01(bumped_vals, vals, bump_amount)
+
+    def test_large_arrays(self):
+        """Test the function with large arrays to ensure correct average DV01 is returned."""
+        vals = np.linspace(100, 200, 1000)
+        bumped_vals = vals - 0.1  # Apply a small shift for each value
+        bump_amount = 0.01
+        expected_dv01 = -10.0
+        self.assertAlmostEqual(calculate_dv01(bumped_vals, vals, bump_amount), expected_dv01)
+
+class TestCalculateConvexity(unittest.TestCase):
+    """
+    Test suite for the calculate_convexity function to verify the calculation of convexity
+    based on original, bumped-up, and bumped-down values.
+    """
+
+    def setUp(self):
+        """Set up test data for the calculate_convexity function."""
+        self.vals = np.array([100, 105, 110])
+        self.bumped_up_vals = np.array([102, 107, 112])
+        self.bumped_down_vals = np.array([99, 104, 109])
+        self.bump_amount = 0.01
+
+    def test_convexity_calculation(self):
+        """Test that convexity is correctly calculated with typical input values."""
+        expected_convexity = 95.23809523809
+        result = calculate_convexity(self.vals, self.bumped_up_vals, self.bumped_down_vals, self.bump_amount)
+        self.assertAlmostEqual(result, expected_convexity, places=6, 
+                               msg="Convexity calculation does not match expected value.")
+
+    def test_zero_bump_amount(self):
+        """Test that a ZeroDivisionError is raised when bump_amount is zero."""
+        with self.assertRaises(ZeroDivisionError):
+            calculate_convexity(self.vals, self.bumped_up_vals, self.bumped_down_vals, 0)
+
+    def test_mismatched_array_shapes(self):
+        """Test that a ValueError is raised when input arrays have mismatched shapes."""
+        bumped_up_vals_mismatched = np.array([101, 106])  # Different shape
+        with self.assertRaises(ValueError):
+            calculate_convexity(self.vals, bumped_up_vals_mismatched, self.bumped_down_vals, self.bump_amount)
+
+    def test_non_array_inputs(self):
+        """Test that function can handle list inputs by converting them to arrays internally."""
+        vals = [100, 105, 110]
+        bumped_up_vals = [102, 107, 112]
+        bumped_down_vals = [99, 104, 109]
+        expected_convexity = 95.23809523809
+        result = calculate_convexity(vals, bumped_up_vals, bumped_down_vals, self.bump_amount)
+        self.assertAlmostEqual(result, expected_convexity, places=6, 
+                               msg="Convexity calculation does not match expected value for list inputs.")
+
+    def test_single_value_input(self):
+        """Test that convexity calculation works with single-value arrays."""
+        result = calculate_convexity([100], [101], [99], 0.01)
+        expected_convexity = ((101 - 2 * 100 + 99) / (100 * (0.01 ** 2)))
+        self.assertAlmostEqual(result, expected_convexity, places=6, 
+                               msg="Convexity calculation does not match expected value for single-value input.")
+
+if __name__ == "__main__":
     unittest.main()
