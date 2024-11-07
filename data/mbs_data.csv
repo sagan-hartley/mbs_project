@@ -1,4 +1,4 @@
-MBS ID,Principal,Number of Months,Gross Annual Coupon,Net Annual Coupon,Settle Date,Origination Date,Payment Delay
+MBS ID,Balance,Number of Months,Gross Annual Coupon,Net Annual Coupon,Settle Date,Origination Date,Payment Delay
 MBS_001,1000,180,0.075,0.075,10/01/2024,10/01/2024,0
 MBS_002,100,180,0.09,0.09,02/20/2025,10/01/2024,0
 MBS_003,10,180,0.05,0.0475,01/01/2025,10/01/2024,0

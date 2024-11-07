@@ -1,7 +1,10 @@
 import numpy as np
 import pandas as pd
 from utils import create_regular_dates_grid
-from .cash_flows import CashFlowData
+from .cash_flows import (
+    CashFlowData,
+    StepDiscounter
+)
 
 class SemiBondContract:
     """
@@ -155,3 +158,57 @@ def calculate_coupon_rate(start_date, maturity_years, discounter):
     coupon_rate = (initial_discount - final_discount) / annuity
 
     return coupon_rate
+
+def pathwise_zcb_eval(maturity_dates, short_rate_paths, short_rate_dates):
+    """
+    Price a Zero-Coupon Bond (ZCB) using short rate paths by computing the discount factors
+    and averaging across paths.
+
+    Parameters:
+    -----------
+    maturity_dates : array-like
+        Array of maturity dates for the ZCBs.
+    short_rate_paths : array-like
+        Array of short rate paths with shape (num_paths, num_steps).
+    short_rate_dates : array-like
+       Array of dates corresponding to each short rate path.
+
+    Returns:
+    --------
+    zcb_vals : np.ndarray
+        Array of zcb values based on the maturity dates for each short rate path.
+        Each row corresponds to a different short rate path and each column
+        represents the different zcb values at that maturity rate.
+    """
+    # Ensure short_rates is a numpy array and handle 1D case by converting to 2D
+    # The one_d_array_bool will be used later to determine return type
+    short_rate_paths = np.asarray(short_rate_paths)
+    if short_rate_paths.ndim == 1:
+        one_d_array_bool = True
+        short_rate_paths = short_rate_paths[np.newaxis, :]
+    else:
+        one_d_array_bool = False
+    
+    # Get the number of short rate paths and initialize a list to store ZCB present values
+    num_paths = short_rate_paths.shape[0]
+    present_values = []
+
+    # Initialize a StepDiscounter instance with a placeholder rate, to be updated within each path iteration
+    discounter = StepDiscounter(short_rate_dates, short_rate_paths[0, :])
+
+    # Loop over each path to calculate present value using the discount_cash_flows function
+    for i in range(num_paths):
+        # Update the discounter rates to the current short rate path
+        discounter.set_rates(short_rate_paths[i, :])
+        
+        # Discount the cash flows for this path
+        vals = discounter.zcbs_from_dates(maturity_dates)
+
+        # Append the current values to the present_values list
+        present_values.append(vals)
+
+    # If only one path, return the values directly as a 1D array
+    if one_d_array_bool:
+        return present_values[0]
+    
+    return np.array(present_values)

@@ -126,6 +126,44 @@ class TestStepDiscounter(unittest.TestCase):
         
         np.testing.assert_array_almost_equal(discounter.integral_vals, expected_integral_vals, decimal=2)
 
+    def test_set_rates_success(self):
+        """Test successful update of rates with matching length."""
+        discounter = StepDiscounter(self.dates, self.rates)
+        
+        # New rates with the same length as the initial rates
+        new_rates = np.array([0.022, 0.027, 0.032, 0.037])
+        
+        # Call set_rates and check that rates have been updated
+        discounter.set_rates(new_rates)
+        np.testing.assert_array_almost_equal(discounter.rates, new_rates)
+    
+    def test_set_rates_mismatched_length(self):
+        """Test set_rates fails if the new rates array has a different length."""
+        discounter = StepDiscounter(self.dates, self.rates)
+        
+        # New rates with a different length
+        new_rates = np.array([0.022, 0.027, 0.032])  # One element short
+        
+        # Expect a ValueError due to length mismatch
+        with self.assertRaises(ValueError):
+            discounter.set_rates(new_rates)
+
+    def test_set_rates_updates_integral_values(self):
+        """Test that calling set_rates updates the integral values correctly."""
+        discounter = StepDiscounter(self.dates, self.rates)
+        
+        # New rates array for updating
+        new_rates = np.array([0.015, 0.02, 0.025, 0.03])
+        
+        # Call set_rates with new rates and check integral values are recalculated
+        discounter.set_rates(new_rates)
+        
+        # Manually calculate expected integral values
+        expected_integral_vals = np.array([0.0, 0.007479, 0.017562, 0.029959, 3.029959])
+        
+        # Compare new integral values with expected integral values
+        np.testing.assert_array_almost_equal(discounter.integral_vals, expected_integral_vals)
+
 class TestFilterCashFlows(unittest.TestCase):
     """Test cases for the filter_cash_flows function."""
 
@@ -480,9 +518,9 @@ class TestCalculateDV01(unittest.TestCase):
     def test_typical_case(self):
         """Test with typical values and a positive bump amount."""
         vals = np.array([100, 105, 110])
-        bumped_vals = np.array([99.9, 104.9, 109.9])
+        bumped_vals = np.array([99.9, 104.7, 109.9])
         bump_amount = 0.01
-        expected_dv01 = -10.0
+        expected_dv01 = -16.66666666666714
         self.assertAlmostEqual(calculate_dv01(bumped_vals, vals, bump_amount), expected_dv01)
 
     def test_zero_bump_amount(self):
@@ -496,9 +534,9 @@ class TestCalculateDV01(unittest.TestCase):
     def test_negative_bump_amount(self):
         """Test with a negative bump amount to verify correct handling of sign."""
         vals = np.array([100, 105, 110])
-        bumped_vals = np.array([100.1, 105.1, 110.1])
+        bumped_vals = np.array([100.1, 105.1, 110.9])
         bump_amount = -0.01
-        expected_dv01 = -10.0
+        expected_dv01 = -36.666666666667425
         self.assertAlmostEqual(calculate_dv01(bumped_vals, vals, bump_amount), expected_dv01)
 
     def test_list_input(self):

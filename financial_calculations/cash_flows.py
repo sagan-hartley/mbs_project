@@ -170,6 +170,28 @@ class StepDiscounter:
         
         # Return the ZCB discount factors by applying the discounting function.
         return zcbs_from_deltas(zcb_deltas, self.integral_vals, self.integral_time_deltas)
+    
+    def set_rates(self, new_rates):
+        """
+        Update the rates and recompute the integral values based on the new rates.
+
+        Parameters:
+        -----------
+        new_rates : np.ndarray
+            An updated array of rates with the same length as the original `rates`.
+
+        Raises:
+        -------
+        ValueError
+            If `new_rates` has a different length than the original `rates`.
+        """
+        # Ensure the new rates array has the same length as the original rates array
+        if len(new_rates) != len(self.rates):
+            raise ValueError("The length of `new_rates` must match the length of `rates`.")
+
+        # Update the rates and recompute the integral values with the new rates
+        self.rates = new_rates
+        _, self.integral_vals = integral_knots(self.dates, self.rates)
 
 def filter_cash_flows(cash_flows, settle_date):
     """
@@ -466,8 +488,8 @@ def evaluate_cash_flows(cash_flows, discounter, settle_date, net_annual_interest
 
 def calculate_dv01(bumped_vals, vals, bump_amount):
     """
-    Calculate the DV01 (Dollar Value of a 01), which represents the price change
-    for a 1 basis point shift in yield.
+    Calculate the dollar value of one basis point (DV01), 
+    which represents the price change for a 1 basis point shift in yield.
 
     Parameters:
     -----------
@@ -481,7 +503,7 @@ def calculate_dv01(bumped_vals, vals, bump_amount):
     Returns:
     --------
     float
-        The average DV01 value, calculated as the mean sensitivity per unit change in yield.
+        The DV01.
 
     Raises:
     -------
@@ -501,9 +523,10 @@ def calculate_dv01(bumped_vals, vals, bump_amount):
     # Check bump_amount is nonzero
     if bump_amount == 0:
         raise ZeroDivisionError("bump_amount cannot be zero.")
-    
-    # Calculate DV01
-    dv01 = np.mean((bumped_vals - vals) / bump_amount)
+
+    # Calculate the DV01   
+    dv01 = (np.mean(bumped_vals) - np.mean(vals)) / bump_amount
+
     return dv01
 
 def calculate_convexity(vals, bumped_up_vals, bumped_down_vals, bump_amount):

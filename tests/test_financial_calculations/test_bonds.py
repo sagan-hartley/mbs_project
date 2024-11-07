@@ -5,7 +5,8 @@ from financial_calculations.bonds import (
     SemiBondContract,
      CashFlowData,
     create_semi_bond_cash_flows,
-    calculate_coupon_rate
+    calculate_coupon_rate,
+    pathwise_zcb_eval
 )
 from financial_calculations.forward_curves import (
     bootstrap_forward_curve,
@@ -82,9 +83,7 @@ class TestCreateSemiBondCashFlows(unittest.TestCase):
         np.testing.assert_array_equal(cash_flows.payment_dates, expected_dates, "Payment dates do not match expected dates")
 
 class TestCalculateCouponRate(unittest.TestCase):
-    """
-    Unit test class for testing the `calculate_coupon_rate` function.
-    """
+    """Unit test class for testing the `calculate_coupon_rate` function."""
 
     def setUp(self):
         """
@@ -154,6 +153,48 @@ class TestCalculateCouponRate(unittest.TestCase):
         coupon_rate = calculate_coupon_rate(start_date, self.maturity_years, self.forward_curve)
         self.assertGreaterEqual(coupon_rate, 0, "Coupon rate should be >= 0")
         self.assertLessEqual(coupon_rate, 1, "Coupon rate should be <= 1")
+
+class TestPathwiseZCB(unittest.TestCase):
+    """Unit test class for the `pathwise_zcb_eval` function."""
+    
+    def setUp(self):
+        """
+        Set up the test data for the test cases.
+
+        Initializes arrays for maturity dates, short rate dates, and short rate paths 
+        that will be used for testing the `pathwise_zcb_eval` function.
+        """
+        # Set up some basic data for the tests
+        self.maturity_dates = pd.to_datetime([pd.Timestamp('2025-01-01'), pd.Timestamp('2026-01-01')])
+        self.short_rate_dates = pd.to_datetime([pd.Timestamp('2024-01-01'), pd.Timestamp('2024-07-01'), pd.Timestamp('2025-01-01')])
+        
+        # Define some simple short rate paths
+        self.single_path = np.array([0.01, 0.02, 0.03])  # Single path of rates
+        self.multi_paths = np.array([[0.01, 0.02, 0.03], [0.015, 0.025, 0.035]])  # Multiple paths of rates
+        
+        # Expected values for single and multi path tests
+        self.expected_single_path_result = np.array([0.98, 0.95])
+        self.expected_multi_paths_result = np.array([[0.98, 0.95], [0.975, 0.94]])
+    
+    def test_single_path(self):
+        """
+        Test the `pathwise_zcb_eval` function with a single short rate path.
+
+        This test checks that when a single short rate path is provided, the function
+        returns a 1D array of ZCB values for each maturity date, compared to the expected result.
+        """
+        result = pathwise_zcb_eval(self.maturity_dates, self.single_path, self.short_rate_dates)
+        np.testing.assert_almost_equal(result, self.expected_single_path_result, decimal=2)
+    
+    def test_multiple_paths(self):
+        """
+        Test the `pathwise_zcb_eval` function with multiple short rate paths.
+
+        This test checks that when multiple short rate paths are provided, the function
+        returns a 2D array of ZCB values for each maturity date, compared to the expected result.
+        """
+        result = pathwise_zcb_eval(self.maturity_dates, self.multi_paths, self.short_rate_dates)
+        np.testing.assert_almost_equal(result, self.expected_multi_paths_result, decimal=2)
 
 if __name__ == '__main__':
     unittest.main()

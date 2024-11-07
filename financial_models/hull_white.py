@@ -25,8 +25,8 @@ def calculate_theta(forward_curve, alpha, sigma, sim_short_rate_dates):
 
     Returns
     -------
-    sim_short_rate_dates : ndarray
-        The simulated short rate dates, converted to datetime64, where theta is evaluated.
+    sim_short_rate_dates : Pandas DatetimeIndex
+        The simulated short rate dates, converted to a Pandas DatetimeIndex, where theta is evaluated.
     theta_vals : ndarray
         The calculated theta values at each simulated short rate date, representing the drift term 
         in the Hull-White model.
@@ -84,7 +84,7 @@ def hull_white_simulate(alpha, sigma, theta, start_rate, iterations=1000, antith
     - antithetic (bool): Boolean flag for using antithetic variates for dW. Default is True.
     
     Returns:
-    - dates (ndarray): The dates for each short rate.
+    - dates (Pandas DatetimeIndex): The dates for each short rate.
     - r_all (ndarray): The simulated short rate paths for all iterations.
     - r_avg (ndarray): The average simulated short rate path across iterations.
     - r_var (ndarray): The simulated variance for each short rate step across iterations.
@@ -179,7 +179,7 @@ def hull_white_simulate_from_curve(alpha, sigma, forward_curve, short_rate_dates
 
     Returns:
     -------
-    - dates (numpy.ndarray) : The array of dates corresponding to the short rate steps.
+    - dates (Pandas DatetimeIndex) : The array of dates corresponding to the short rate steps.
     - r_all (numpy.ndarray) : The simulated short rate paths for each iteration (shape: iterations x steps).
     - r_avg (numpy.ndarray) : The average simulated short rate path across iterations (shape: steps).
     - r_var (numpy.ndarray) : The variance of the short rate path across iterations (shape: steps).

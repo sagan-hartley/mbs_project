@@ -4,7 +4,9 @@ import pandas as pd
 from financial_calculations.mbs import (
     calculate_monthly_payment,
     calculate_scheduled_balances,
-    calculate_actual_balances
+    calculate_actual_balances,
+    MbsContract,
+    pathwise_evaluate_mbs
 )
 from financial_calculations.cash_flows import (
     StepDiscounter,
@@ -219,6 +221,217 @@ class TestCalculateCleanPrice(BaseTestCase):
             clean_prices.append(clean_price)
         np.testing.assert_array_almost_equal(clean_prices, self.expected_clean_prices)
 
+class TestMbsContractDataClass(unittest.TestCase):
+    """
+    Unit tests for the MbsContract dataclass.
+
+    This class tests various aspects of the MbsContract dataclass, including initialization,
+    validation of inputs, and expected behavior of methods and attributes.
+    """
+
+    def setUp(self):
+        """
+        Set up initial data for MBS tests.
+        """
+        self.mbs_data = {
+            'mbs_id': 'MBS001',
+            'balance': 1000000.0,
+            'origination_date': pd.to_datetime('2024-01-01'),
+            'num_months': 360,
+            'gross_annual_coupon': 0.03,
+            'net_annual_coupon': 0.025,
+            'payment_delay': 30,
+            'settle_date': pd.to_datetime('2024-02-01')
+        }
+
+        # Create the Mbs Contract object
+        self.mbs = MbsContract(**self.mbs_data)
+
+    def test_initialization(self):
+        """
+        Test initialization of the MbsContract dataclass.
+
+        This test ensures that the class initializes correctly with the provided dates,
+        balance, and other attributes.
+        """
+        # Verify if the MBS object has the expected attributes
+        self.assertEqual(self.mbs.mbs_id, self.mbs_data['mbs_id'])
+        self.assertEqual(self.mbs.balance, self.mbs_data['balance'])
+        self.assertEqual(self.mbs.num_months, self.mbs_data['num_months'])
+        self.assertEqual(self.mbs.gross_annual_coupon, self.mbs_data['gross_annual_coupon'])
+        self.assertEqual(self.mbs.net_annual_coupon, self.mbs_data['net_annual_coupon'])
+        self.assertEqual(self.mbs.payment_delay, self.mbs_data['payment_delay'])
+
+        # Ensure that the origination_date and settle_date are pandas Timestamps
+        self.assertIsInstance(self.mbs.origination_date, pd.Timestamp)
+        self.assertIsInstance(self.mbs.settle_date, pd.Timestamp)
+
+    def test_invalid_origination_date(self):
+        """
+        Test that the MbsContract dataclass raises an error when an invalid origination date is provided.
+        """
+        with self.assertRaises(ValueError):
+            invalid_date = "not_a_valid_date"
+            MbsContract(mbs_id=self.mbs_data['mbs_id'], balance=self.mbs_data['balance'], 
+                origination_date=invalid_date, num_months=self.mbs_data['num_months'], 
+                gross_annual_coupon=self.mbs_data['gross_annual_coupon'], 
+                net_annual_coupon=self.mbs_data['net_annual_coupon'], 
+                payment_delay=self.mbs_data['payment_delay'], settle_date=self.mbs_data['settle_date'])
+
+    def test_payment_delay(self):
+        """
+        Test that the MbsContract dataclass correctly handles the payment delay.
+        """
+        # Check that the payment_delay is as expected
+        self.assertEqual(self.mbs.payment_delay, self.mbs_data['payment_delay'])
+
+    def test_settle_date(self):
+        """
+        Test that the settle_date is correctly initialized as a pandas Timestamp.
+        """
+        self.assertIsInstance(self.mbs.settle_date, pd.Timestamp)
+        self.assertEqual(self.mbs.settle_date, self.mbs_data['settle_date'])
+
+    def test_balance(self):
+        """
+        Test the balance attribute to ensure it matches the expected value.
+        """
+        self.assertEqual(self.mbs.balance, self.mbs_data['balance'])
+
+    def test_invalid_settle_date(self):
+        """
+        Test that the MbsContract dataclass raises an error when an invalid settle date is provided.
+        """
+        with self.assertRaises(ValueError):
+            invalid_date = "not_a_valid_date"
+            MbsContract(mbs_id=self.mbs_data['mbs_id'], balance=self.mbs_data['balance'], 
+                origination_date=self.mbs_data['origination_date'], num_months=self.mbs_data['num_months'], 
+                gross_annual_coupon=self.mbs_data['gross_annual_coupon'], 
+                net_annual_coupon=self.mbs_data['net_annual_coupon'], 
+                payment_delay=self.mbs_data['payment_delay'], settle_date=invalid_date)
+
+class TestPathwiseEvaluateMBS(unittest.TestCase):
+    """
+    Unit tests for the pathwise_evaluate_mbs function.
+
+    This suite tests various input conditions and the correctness of results returned by
+    the pathwise_evaluate_mbs function, including edge cases and validation for output
+    when different flags (store_vals, store_expecteds, store_stdevs) are set to True or False.
+
+    Note that these tests are not testing the explicit values of the results from the 
+    pathwise_evaluate_mbs function as the functions providing them (value_cash_flows, calculate_wal, etc...)
+    are already thouroughly tested elsewhere.
+    """
+
+    def setUp(self):
+        """
+        Set up test data for MBS and short rates.
+        """
+        # Example MbsContract object
+        self.mbs = MbsContract(
+            mbs_id='MBS001',
+            balance=1000000.0,
+            origination_date=pd.to_datetime('2024-01-01'),
+            num_months=180,
+            gross_annual_coupon=0.05,
+            net_annual_coupon=0.0475,
+            payment_delay=30,
+            settle_date=pd.to_datetime('2024-02-01')
+        )
+
+        # Simulated short rate paths (2 paths, 200 periods each)
+        self.short_rates = np.array([np.ones(200)*0.05, 
+                                     np.ones(200)*0.06])
+
+        # Short rate dates (corresponding dates for the short rates)
+        self.short_rate_dates = create_regular_dates_grid('2024-01-01', '2040-08-01')
+
+        # List of MBS objects (in this case just one)
+        self.mbs_list = [self.mbs]
+
+    def test_basic_functionality(self):
+        """
+        Test the basic functionality of pathwise_evaluate_mbs with default flags.
+        """
+        results = pathwise_evaluate_mbs(self.mbs_list, self.short_rates, self.short_rate_dates)
+
+        # Check the result structure for the first MBS
+        self.assertEqual(len(results), 1)  # One MBS in the list
+        mbs_result = results[0]
+        
+        # Ensure MBS ID is correct
+        self.assertEqual(mbs_result['mbs_id'], self.mbs.mbs_id)
+        
+        # Check that the results contain expected keys
+        self.assertIn('wals', mbs_result)
+        self.assertIn('vals', mbs_result)
+        self.assertIn('prices', mbs_result)
+        self.assertIn('expected_wal', mbs_result)
+        self.assertIn('expected_value', mbs_result)
+        self.assertIn('expected_price', mbs_result)
+        self.assertIn('wal_stdev', mbs_result)
+        self.assertIn('value_stdev', mbs_result)
+        self.assertIn('price_stdev', mbs_result)
+
+    def test_store_vals_false(self):
+        """
+        Test that setting store_vals=False does not store individual path values.
+        """
+        results = pathwise_evaluate_mbs(self.mbs_list, self.short_rates, self.short_rate_dates, store_vals=False)
+
+        mbs_result = results[0]
+        self.assertNotIn('wals', mbs_result)
+        self.assertNotIn('vals', mbs_result)
+        self.assertNotIn('prices', mbs_result)
+
+    def test_store_expecteds_false(self):
+        """
+        Test that setting store_expecteds=False does not store the expected (mean) values.
+        """
+        results = pathwise_evaluate_mbs(self.mbs_list, self.short_rates, self.short_rate_dates, store_expecteds=False)
+
+        mbs_result = results[0]
+        self.assertNotIn('expected_wal', mbs_result)
+        self.assertNotIn('expected_value', mbs_result)
+        self.assertNotIn('expected_price', mbs_result)
+
+    def test_store_stdevs_false(self):
+        """
+        Test that setting store_stdevs=False does not store the standard deviations.
+        """
+        results = pathwise_evaluate_mbs(self.mbs_list, self.short_rates, self.short_rate_dates, store_stdevs=False)
+
+        mbs_result = results[0]
+        self.assertNotIn('wal_stdev', mbs_result)
+        self.assertNotIn('value_stdev', mbs_result)
+        self.assertNotIn('price_stdev', mbs_result)
+
+    def test_empty_mbs_list(self):
+        """
+        Test the case when an empty MBS list is provided.
+        """
+        results = pathwise_evaluate_mbs([], self.short_rates, self.short_rate_dates)
+        self.assertEqual(results, [])
+
+    def test_single_path(self):
+        """
+        Test the case where only a single short rate path is provided.
+        """
+        single_path_rates = np.ones(200)*0.05
+        results = pathwise_evaluate_mbs(self.mbs_list, single_path_rates, self.short_rate_dates)
+
+        mbs_result = results[0]
+        self.assertEqual(len(mbs_result['wals']), 1)  # Only one path should be present
+        self.assertEqual(len(mbs_result['vals']), 1)
+        self.assertEqual(len(mbs_result['prices']), 1)
+
+    def test_inconsistent_length_of_short_rates_and_dates(self):
+        """
+        Test that the function raises an error when the lengths of short_rates and short_rate_dates don't match.
+        """
+        inconsistent_dates = create_regular_dates_grid('2024-01-01', '2040-07-01')  # 199 dates instead of 200
+        with self.assertRaises(ValueError):
+            pathwise_evaluate_mbs(self.mbs_list, self.short_rates, inconsistent_dates)
 
 if __name__ == '__main__':
     unittest.main()

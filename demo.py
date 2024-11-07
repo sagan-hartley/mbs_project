@@ -1,42 +1,37 @@
-from dateutil.relativedelta import relativedelta
 import numpy as np
 import seaborn as sns
 import pandas as pd
 import matplotlib.pyplot as plt
-from utils import integer_months_from_reference
 from financial_models.hull_white import (
     hull_white_simulate_from_curve
 )
-from financial_models.prepayment import (
-    calculate_pccs,
-    calculate_smms
-)
 from financial_calculations.bonds import (
-    SemiBondContract,
-    create_semi_bond_cash_flows
+    pathwise_zcb_eval
 )
 from financial_calculations.forward_curves import (
     bootstrap_forward_curve,
     calibrate_fine_curve
 )
 from financial_calculations.mbs import (
-    calculate_scheduled_balances,
-    calculate_actual_balances
+    MbsContract,
+    pathwise_evaluate_mbs
 )
 from financial_calculations.cash_flows import (
-    StepDiscounter,
-    value_cash_flows,
-    evaluate_cash_flows,
     calculate_dv01,
     calculate_convexity
 )
-
-SETTLE_DATE_IDX = 5
-ORIGINATION_DATE_IDX = 6
+MBS_ID_COL = 'MBS ID'
+BAL_COL = 'Balance'
+NUM_MONTHS_COL = 'Number of Months'
+GROSS_CPN_COL = 'Gross Annual Coupon'
+NET_CPN_COL = 'Net Annual Coupon'
+SETTLE_DATE_COL = 'Settle Date'
+ORIG_DATE_COL = 'Origination Date'
+PYMNT_DEL_COL = 'Payment Delay'
 
 def load_treasury_rates_data(rates_file):
     """
-    Loads treasury data from a CSV file and safely evaluate maturity year strings.
+    Loads treasury data from a CSV file and evaluate maturity year strings.
 
     Parameters:
     rates_file (str): Path to the treasury rates data CSV file.
@@ -58,7 +53,7 @@ def load_treasury_rates_data(rates_file):
     # Extract the rates from the first row (since it's only one row of data)
     rates = df.iloc[0, 1:].tolist()  # All values in the first row except the date
     
-    # Create a list of tuples with maturity year (as int) and corresponding rate (as percentage)
+    # Create a list of tuples with maturity year (as int) and corresponding rate (as decimal)
     maturity_rate_tuples = [(int(col.split()[0]), rate/100) for col, rate in zip(maturity_year_columns, rates)]
     
     # Return the date and the list of tuples
@@ -66,33 +61,45 @@ def load_treasury_rates_data(rates_file):
 
 def load_mbs_data(mbs_file):
     """
-    Loads MBS data from a CSV file and safely evaluate list-like strings.
+    Loads MBS data from a CSV file and returns a list of MBS dataclass instances with pandas Timestamps.
 
     Parameters:
-    mbs_file (str): Path to the mbs data CSV file.
+    mbs_file (str): Path to the MBS data CSV file.
 
     Returns:
-    mbs_data (list): A list of tuples representing the mbs data.
+    mbs_list (list): A list of MBS instances with the required attributes.
     """
-    # Load MBS data from CSV files
-    mbs_data = pd.read_csv(mbs_file, skiprows=1, header=None)
+    # Load MBS data from CSV
+    mbs_data = pd.read_csv(mbs_file)
 
     # Apply the datetime parsing to the Settle Date and Origination Date columns
-    mbs_data[SETTLE_DATE_IDX] = mbs_data[SETTLE_DATE_IDX].apply(pd.to_datetime)
-    mbs_data[ORIGINATION_DATE_IDX] = mbs_data[ORIGINATION_DATE_IDX].apply(pd.to_datetime)
+    mbs_data[SETTLE_DATE_COL] = pd.to_datetime(mbs_data[SETTLE_DATE_COL])
+    mbs_data[ORIG_DATE_COL] = pd.to_datetime(mbs_data[ORIG_DATE_COL])
 
-    # Convert values to a list
-    mbs_data = mbs_data.values.tolist()
+    # Convert each row to an MBS instance and append to the list
+    mbs_contracts = [
+        MbsContract(
+            mbs_id=row[MBS_ID_COL],
+            balance=row[BAL_COL],
+            origination_date=row[ORIG_DATE_COL],
+            num_months=row[NUM_MONTHS_COL],
+            gross_annual_coupon=row[GROSS_CPN_COL],
+            net_annual_coupon=row[NET_CPN_COL],
+            payment_delay=row[PYMNT_DEL_COL],
+            settle_date=row[SETTLE_DATE_COL]
+        )
+        for _, row in mbs_data.iterrows()
+    ]
 
-    return mbs_data
+    return mbs_contracts
 
 def plot_forward_curves(coarse_curve, fine_curve):
     """
     Plots the coarse and fine forward curves.
 
     Parameters:
-    coarse_curve (tuple): A tuple of rate dates and rate values for the coarse curve.
-    fine_curve (tuple): A tuple of rate dates and rate values for the fine curve.
+    coarse_curve (StepDiscounter): An instance of StepDiscounter with dates and rates for a coarse curve.
+    fine_curve (StepDiscounter): An instance of StepDiscounter with dates and rates for a fine curve.
 
     Returns:
         None
@@ -107,130 +114,13 @@ def plot_forward_curves(coarse_curve, fine_curve):
     plt.grid()
     plt.show()
 
-def evaluate_mbs_short_rate_paths(mbs_data, short_rates, short_rate_dates):
-    """
-    Calculate the expected weighted average life, value, price, as well as path standard deviations for the MBS based on short rate paths.
-
-    Parameters:
-    - mbs_data (list): A list containing details of the MBSs including ID, balance, number of months, gross and net annual coupons, accrual dates, single monthly mortality (SMM) rate, and payment delay days.
-    - short_rates (ndarray): Array of short rates from the simulation.
-    - short_rate_dates (ndarray): Array of dates corresponding to the short rates.
-
-    Returns:
-    - results (list): A list of dictionaries containing MBS ID, WALs, expected WAL, values, expected value, prices, expected price, and standard deviations for each MBS.
-    """
-    results = []  # To store results for each MBS
-    market_close_date = short_rate_dates[0]  # Extract the market close date from the short rate dates
-
-    # Loop through each MBS in the provided data
-    for mbs in mbs_data:
-        wals, vals, prices = [], [], []  # Lists to store results for the current MBS
-
-        # Unpack the MBS details
-        mbs_id, balance, num_months, gross_annual_coupon, net_annual_coupon, settle_date, origination_date, payment_delay = mbs
-
-        # Calculate the necessary scheduled balance data to value and price the cash flows
-        scheduled_balances = calculate_scheduled_balances(balance, origination_date, num_months, gross_annual_coupon, payment_delay=payment_delay)
-
-        # Calculate the Primary Current Coupons (PCCs) and SMMs based on the original short rates
-        pccs = calculate_pccs(short_rates)
-        smms = calculate_smms(pccs, gross_annual_coupon, market_close_date, origination_date, num_months)
-
-        # Loop through each SMM path to calculate cash flows
-        for index, smm_path in enumerate(smms):
-            # Calculate the actual scheduled balances based on the current SMM
-            actual_balances = calculate_actual_balances(scheduled_balances, smm_path, net_annual_coupon)
-
-            # Define an instance of StepDiscounter based on the current short rate path
-            discounter = StepDiscounter(short_rate_dates, short_rates[index, :])
-
-            # Evaluate the cash flows for the current MBS using the actual balances, SMM, and current discounter
-            wal, val, price = evaluate_cash_flows(actual_balances, discounter, settle_date, net_annual_coupon)
-            
-            # Store the calculated values
-            wals.append(wal)
-            vals.append(val)
-            prices.append(price)
-
-        # Calculate means for the WAL, value, and price, DV01 of the MBS
-        expected_wal = np.mean(wals)
-        expected_value = np.mean(vals)
-        expected_price = np.mean(prices)
-
-        # Calculate standard deviations
-        wal_stdev = np.std(wals)
-        val_stdev = np.std(vals)
-        price_stdev = np.std(prices)
-
-        # Store the result in a dictionary for structured output
-        results.append({
-            'mbs_id': mbs_id,
-            'wals': wals,
-            'expected_wal': expected_wal,
-            'wal_stdev': wal_stdev,
-            'vals': vals,
-            'expected_value': expected_value,
-            'value_stdev': val_stdev,
-            'prices': prices,
-            'expected_price': expected_price,
-            'price_stdev': price_stdev
-        })
-
-    return results  # Return the list of results for all MBS
-
-def pathwise_zcb_eval(maturity_date, short_rate_paths, discount_rate_dates):
-    """
-    Price a Zero-Coupon Bond (ZCB) using short rate paths by computing the discount factors
-    and averaging across paths.
-
-    Parameters:
-    -----------
-    maturity_date : np.datetime64
-        The maturity date of the ZCB.
-    short_rate_paths : np.ndarray
-        Array of short rate paths with shape (num_paths, num_steps).
-    discount_rate_dates : np.ndarray
-        Array of datetime or datetime64[D] objects representing the dates on which the discount rates apply.
-
-    Returns:
-    --------
-    (zcb_price, zcb_std) : tuple
-         The average present value (price) of the ZCB across all paths and the standard deviation 
-    """
-    # Get the number of short rate paths and initialize an array to store ZCB present values
-    num_paths = short_rate_paths.shape[0]
-    present_values = np.zeros(num_paths)
-
-    # Define the market close date and the term in months of the bond from input data
-    market_close_date = discount_rate_dates[0]
-    term_in_months = integer_months_from_reference(market_close_date, maturity_date)
-
-    # Set up a single cash flow of 100 at the maturity date (for a ZCB) by using a SemiBondContract with zero coupon
-    cash_flows = create_semi_bond_cash_flows(SemiBondContract(market_close_date, term_in_months, 0))
-
-    # Loop over each path to calculate present value using the discount_cash_flows function
-    for i in range(num_paths):
-        # Use the short rates of the current path as the discount rates
-        discounter = StepDiscounter(discount_rate_dates, short_rate_paths[i, :])
-        
-        # Discount the cash flows for this path
-        present_values[i] = value_cash_flows(discounter, cash_flows, market_close_date)
-    
-    # Average the present values across all paths
-    zcb_price = np.mean(present_values)
-
-    # Calculate the standard deviation the present values across all paths
-    zcb_std = np.std(present_values)
-    
-    return zcb_price, zcb_std
-
 def plot_hull_white(hull_white, forward_curve, title='Hull-White Average Path vs Forward Curve'):
     """
     Plots the Hull-White simulation results and forward curve.
 
     Parameters:
     hull_white (tuple): A tuple of rate dates and rate values for the Hull-White simulation.
-    forward_curve (ForwardCurve): A ForwardCurve object with rate dates and rate values as attributes.
+    forward_curve (StepDiscounter): An instance of StepDiscounter representing a forward curve.
     title (str): A string representing the title of the grpah. Default is 'Hull-White Average Path vs Forward Curve'.
 
     Returns:
@@ -252,7 +142,7 @@ def plot_hull_white_paths(hull_white, forward_curve, title='Hull-White Paths vs 
 
     Parameters:
     hull_white (tuple): A tuple of rate dates and rate values for the Hull-White simulation.
-    forward_curve (ForwardCurve): A ForwardCurve object with rate dates and rate values as attributes.
+    forward_curve (StepDiscounter): An instance of StepDiscounter representing a forward curve.
     title (str): A string representing the title of the grpah. Default is 'Hull-White Paths vs Forward Curve'.
 
     Returns:
@@ -265,7 +155,7 @@ def plot_hull_white_paths(hull_white, forward_curve, title='Hull-White Paths vs 
     for index, rate in enumerate(hull_white[1]):
         plt.step(hull_white[0], rate, where='post', label=f'Hull-White Path {index + 1}', color=colors[index], alpha=0.6)
     
-    plt.step(forward_curve.dates, forward_curve.rates, where='post', label='Fine Curve', color='orange')
+    plt.step(forward_curve.dates, forward_curve.rates, where='post', label='Forward Curve', color='orange', linewidth=3.0)
     plt.xlabel('Date')
     plt.ylabel('Rate')
     plt.title(title)
@@ -273,25 +163,40 @@ def plot_hull_white_paths(hull_white, forward_curve, title='Hull-White Paths vs 
     plt.grid()
     plt.show()
 
-def plot_hull_white_zcb_prices(hull_white):
+def plot_hull_white_zcb_prices(hull_white, forward_curve, title='Hull-White Paths vs Forward Curve ZCB Values'):
     """
-    Plots the zcb prices based on short rates from a Hull-White simulation.
+    Plots the zcb values based on short rates from a Hull-White simulation.
+    Also plots the zcb values based on forward curve rates for comparison.
 
     Parameters:
     hull_white (tuple): A tuple of rate dates and rate values for the Hull-White simulation.
+    forward_curve (StepDiscounter): An instance of StepDiscounter representing a forward curve.
+    title (str): A string representing the title of the grpah. Default is 'Hull-White Paths vs Forward Curve ZCB Values'.
 
     Returns:
         None
     """
     dates, rates , _, _ = hull_white # Extract the dates and rates from the Hull-White simulation
 
-    hw_zcb_prices = [pathwise_zcb_eval(date, rates, dates)[0] for date in dates] # Calculate the ZCB prices
+    # Calculate the ZCB prices based on the Hull-White simulation results
+    hw_zcb_prices = pathwise_zcb_eval(dates, rates, dates)
+
+    # Calculate the ZCB prices based on the forward curve data
+    curve_zcb_prices = pathwise_zcb_eval(dates, forward_curve.rates, forward_curve.dates)
+
+    # Generate distinct colors for each path
+    num_paths = len(rates)
+    colors = sns.color_palette("husl", num_paths)
 
     plt.figure(figsize=(10, 6))
-    plt.scatter(dates, hw_zcb_prices, s=10)
+    for index, zcb_prices in enumerate(hw_zcb_prices):
+        plt.step(dates, zcb_prices, where='post', label=f'Hull-White Path {index + 1}', color=colors[index], alpha=0.6)
+
+    plt.step(forward_curve.dates, curve_zcb_prices, where='post', label='Forward Curve', color='orange', linewidth=3.0)
     plt.xlabel('Date')
     plt.ylabel('Price')
-    plt.title('ZCB Prices')
+    plt.title(title)
+    plt.legend()
     plt.grid()
     plt.show()
 
@@ -302,7 +207,7 @@ def main():
     
     # Load data
     market_close_date, calibration_data = load_treasury_rates_data(calibration_file)
-    mbs_data = load_mbs_data(mbs_file)
+    mbs_contracts = load_mbs_data(mbs_file)
 
     # Get the calibration data as a tuple including the date for each element
     calibration_data_with_dates = np.array([(market_close_date,) + calibration_bond for calibration_bond in calibration_data])
@@ -320,7 +225,7 @@ def main():
     # Define alpha, sigma, and num_iterations
     alpha = 1
     sigma = 0.01
-    num_iterations = 100
+    num_iterations = 1000
 
     print(f"Alpha: {alpha}, Sigma: {sigma}, Number of Iterations: {num_iterations}")
 
@@ -346,8 +251,8 @@ def main():
     plot_hull_white_paths(hw_low_paths_1, fine_curve, title='No Antithetic Hull-White Paths vs Forward Curve')
     plot_hull_white_paths(hw_low_paths_2, fine_curve, title='Antithetic Hull-White Paths vs Forward Curve')
 
-    # Plot the ZCB prices based on short rates from the Hull-White simulation
-    plot_hull_white_zcb_prices(hull_white)
+    # Plot the ZCB prices based on short rates from the antithetic low path number Hull-White simulation
+    plot_hull_white_zcb_prices(hw_low_paths_2, fine_curve)
 
     # Define a bump amount to create Hull-White simulations where the forward curve has been shocked up and down by this amount
     # These simulation results will be used to calculate the DV01 and convexity for the value of each MBS
@@ -366,10 +271,10 @@ def main():
     bumped_down_short_rates = bumped_down_hw[1]
 
     # Simulate expected WALs, values, prices, and their standard deviations for each set of short rates
-    simulated_mbs_values = evaluate_mbs_short_rate_paths(mbs_data, short_rates, short_rate_dates)
-    no_antithetic_mbs_values = evaluate_mbs_short_rate_paths(mbs_data, no_antithetic_short_rates, short_rate_dates)
-    bumped_up_values = evaluate_mbs_short_rate_paths(mbs_data, bumped_up_short_rates, short_rate_dates)
-    bumped_down_values = evaluate_mbs_short_rate_paths(mbs_data, bumped_down_short_rates, short_rate_dates)
+    simulated_mbs_values = pathwise_evaluate_mbs(mbs_contracts, short_rates, short_rate_dates)
+    no_antithetic_mbs_values = pathwise_evaluate_mbs(mbs_contracts, no_antithetic_short_rates, short_rate_dates)
+    bumped_up_values = pathwise_evaluate_mbs(mbs_contracts, bumped_up_short_rates, short_rate_dates)
+    bumped_down_values = pathwise_evaluate_mbs(mbs_contracts, bumped_down_short_rates, short_rate_dates)
 
     for index, mbs in enumerate(simulated_mbs_values):
         # Print the evalution results for each MBS in the simulated_mbs_values
