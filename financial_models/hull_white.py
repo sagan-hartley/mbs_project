@@ -3,7 +3,7 @@ import pandas as pd
 from utils import (
     years_from_reference,
     step_interpolate,
-    DISC_DAYS_IN_YEAR
+    calculate_antithetic_variance
 )
 
 def calculate_theta(forward_curve, alpha, sigma, sim_short_rate_dates):
@@ -89,11 +89,15 @@ def hull_white_simulate(alpha, sigma, theta, start_rate, iterations=1000, antith
     - r_avg (ndarray): The average simulated short rate path across iterations.
     - r_var (ndarray): The simulated variance for each short rate step across iterations.
     """
-    # Unpack the dates and value from theta and get the number of steps by their length
+    # Check if antithetic is True and iterations is odd
+    if antithetic and iterations % 2 != 0:
+        raise ValueError("When antithetic=True, the number of iterations must be even.")
+
+    # Unpack the dates and values from theta and get the number of steps by their length
     dates, vals = theta
     num_steps = len(dates)
 
-    # Convert dates to a Pandas DateTime index if necessary
+    # Convert dates to a Pandas DatetimeIndex if necessary
     dates = pd.to_datetime(dates)
 
     # Initialize array for storing all simulated short rate paths
@@ -103,7 +107,7 @@ def hull_white_simulate(alpha, sigma, theta, start_rate, iterations=1000, antith
     r_all[:, 0] = start_rate
 
     if antithetic:
-        # Handle odd iterations by creating an extra path for the leftover sample
+        # Handle even iterations by creating pairs of antithetic paths
         half_iterations = iterations // 2
 
         # Generate random normal samples for antithetic sampling if true
@@ -111,18 +115,12 @@ def hull_white_simulate(alpha, sigma, theta, start_rate, iterations=1000, antith
 
         # Create antithetic variates
         dW = np.concatenate((dW_half, -dW_half), axis=0)  # shape (iterations, num_steps - 1)
-
-        # If iterations is odd, add one extra independent path
-        if iterations % 2 == 1:
-            extra_dW = np.random.normal(size=(1, num_steps - 1))  # One extra normal sample
-            dW = np.concatenate((dW, extra_dW), axis=0)
-
     else:
         # Generate random normal increments for the Wiener process for all iterations and all steps if antithetic is False
         dW = np.random.normal(size=(iterations, num_steps - 1))  # shape (iterations, num_steps - 1)
 
     # Calculate time increments
-    dt = (dates[1:] - dates[:-1]).days / DISC_DAYS_IN_YEAR  # shape (num_steps - 1)
+    dt = np.diff(years_from_reference(dates[0], dates))  # shape (num_steps - 1)
 
     # Hull-White short rate evolution
     for t in range(1, num_steps):
@@ -135,26 +133,8 @@ def hull_white_simulate(alpha, sigma, theta, start_rate, iterations=1000, antith
 
     # If antithetic is used, calculate variance for the antithetic paths
     if antithetic:
-        # Split into original and antithetic halves
-        half_iterations = iterations // 2
-        if iterations % 2 == 0:
-            # Even case: Use all original and antithetic paths
-            r_original = r_all[:half_iterations, :]
-            r_antithetic = r_all[half_iterations:, :]  # All remaining paths are antithetic
-        else:
-            # Odd case: Use original and antithetic paths, excluding the last odd path
-            r_original = r_all[:half_iterations, :]
-            r_antithetic = r_all[half_iterations:iterations - 1, :]  # Leave out the last path (odd)
-
-        # Compute the average of the antithetic and original paths
-        r_combined = (r_original + r_antithetic) / 2
-
-        # If iterations is odd, include the extra path directly into the combined paths
-        if iterations % 2 == 1:
-            r_combined = np.vstack((r_combined, r_all[-1, :]))
-
         # Compute the variance of the combined antithetic variates
-        r_var = np.var(r_combined, axis=0)
+        r_var = calculate_antithetic_variance(r_all)
 
     else:
         # Calculate variance across all short rate paths (no antithetic variates)

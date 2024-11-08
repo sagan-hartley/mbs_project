@@ -486,17 +486,17 @@ def evaluate_cash_flows(cash_flows, discounter, settle_date, net_annual_interest
     # Return the WAL, present value, and price of the cash flows as a tuple
     return wal, value, price
 
-def calculate_dv01(bumped_vals, vals, bump_amount):
+def calculate_dv01(up_vals, down_vals, bump_amount):
     """
     Calculate the dollar value of one basis point (DV01), 
     which represents the price change for a 1 basis point shift in yield.
 
     Parameters:
     -----------
-    bumped_vals : array-like
-        Array of values when rates are bumped by a specified amount.
-    vals : array-like
-        Array of original values without the bump.
+    up_vals : array-like
+        Array of values when rates are bumped up by a specified amount.
+    down_vals : array-like
+        Array of values when rates are bumped down by a specified amount.
     bump_amount : float
         The amount by which rates were bumped to obtain `bumped_vals`.
 
@@ -513,11 +513,11 @@ def calculate_dv01(bumped_vals, vals, bump_amount):
         If 'bump_amount' is 0.
     """
     # Convert inputs to Numpy arrays if they are not already
-    bumped_vals = np.array(bumped_vals)
-    vals = np.array(vals)
+    up_vals = np.array(up_vals)
+    down_vals = np.array(down_vals)
 
     # Check for shape compatibility
-    if bumped_vals.shape != vals.shape:
+    if up_vals.shape != down_vals.shape:
         raise ValueError("bumped_vals and vals must have the same shape.")
     
     # Check bump_amount is nonzero
@@ -525,7 +525,7 @@ def calculate_dv01(bumped_vals, vals, bump_amount):
         raise ZeroDivisionError("bump_amount cannot be zero.")
 
     # Calculate the DV01   
-    dv01 = (np.mean(bumped_vals) - np.mean(vals)) / bump_amount
+    dv01 = (np.mean(up_vals) - np.mean(down_vals)) / (2*bump_amount)
 
     return dv01
 

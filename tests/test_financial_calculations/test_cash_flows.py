@@ -512,40 +512,40 @@ class TestGetLastCouponDate(unittest.TestCase):
 class TestCalculateDV01(unittest.TestCase):
     """
     Test suite for the `calculate_dv01` function, which calculates the DV01
-    (Dollar Value of a 01) based on bumped and original values and a bump amount.
+    (Dollar Value of a 01) based on bumped up and down values and a bump amount.
     """
 
     def test_typical_case(self):
         """Test with typical values and a positive bump amount."""
-        vals = np.array([100, 105, 110])
-        bumped_vals = np.array([99.9, 104.7, 109.9])
+        down_vals = np.array([100, 105, 110])
+        up_vals = np.array([99.9, 104.7, 109.9])
         bump_amount = 0.01
-        expected_dv01 = -16.66666666666714
-        self.assertAlmostEqual(calculate_dv01(bumped_vals, vals, bump_amount), expected_dv01)
+        expected_dv01 = -8.333333333333
+        self.assertAlmostEqual(calculate_dv01(up_vals, down_vals, bump_amount), expected_dv01)
 
     def test_zero_bump_amount(self):
         """Test that a zero bump amount raises a ZeroDivisionError."""
-        vals = np.array([100, 105, 110])
-        bumped_vals = np.array([99.9, 104.9, 109.9])
+        down_vals = np.array([100, 105, 110])
+        up_vals = np.array([99.9, 104.9, 109.9])
         bump_amount = 0.0
         with self.assertRaises(ZeroDivisionError):
-            calculate_dv01(bumped_vals, vals, bump_amount)
+            calculate_dv01(up_vals, down_vals, bump_amount)
 
     def test_negative_bump_amount(self):
         """Test with a negative bump amount to verify correct handling of sign."""
-        vals = np.array([100, 105, 110])
-        bumped_vals = np.array([100.1, 105.1, 110.9])
+        down_vals = np.array([100, 105, 110])
+        up_vals = np.array([100.1, 105.1, 110.9])
         bump_amount = -0.01
-        expected_dv01 = -36.666666666667425
-        self.assertAlmostEqual(calculate_dv01(bumped_vals, vals, bump_amount), expected_dv01)
+        expected_dv01 = -18.33333333333
+        self.assertAlmostEqual(calculate_dv01(up_vals, down_vals, bump_amount), expected_dv01)
 
     def test_list_input(self):
         """Test with list inputs to ensure conversion to NumPy arrays is handled properly"""
-        vals = [100, 105, 110]
-        bumped_vals = [99.9, 104.9, 109.9]
+        down_vals = [100, 105, 110]
+        up_vals = [99.9, 104.9, 109.9]
         bump_amount = 0.01
-        expected_dv01 = -10.0
-        self.assertAlmostEqual(calculate_dv01(bumped_vals, vals, bump_amount), expected_dv01)
+        expected_dv01 = -5.0
+        self.assertAlmostEqual(calculate_dv01(up_vals, down_vals, bump_amount), expected_dv01)
 
     def test_identical_values(self):
         """Test with identical bumped and original values to check for zero DV01."""
@@ -557,19 +557,19 @@ class TestCalculateDV01(unittest.TestCase):
 
     def test_array_length_mismatch(self):
         """Test that differing lengths between `bumped_vals` and `vals` raises a ValueError."""
-        vals = np.array([100, 105, 110])
-        bumped_vals = np.array([100, 105])  # Different length
+        down_vals = np.array([100, 105, 110])
+        up_vals = np.array([100, 105])  # Different length
         bump_amount = 0.01
         with self.assertRaises(ValueError):
-            calculate_dv01(bumped_vals, vals, bump_amount)
+            calculate_dv01(up_vals, down_vals, bump_amount)
 
     def test_large_arrays(self):
         """Test the function with large arrays to ensure correct average DV01 is returned."""
-        vals = np.linspace(100, 200, 1000)
-        bumped_vals = vals - 0.1  # Apply a small shift for each value
+        down_vals = np.linspace(100, 200, 1000)
+        up_vals = down_vals - 0.1  # Apply a small shift for each value
         bump_amount = 0.01
-        expected_dv01 = -10.0
-        self.assertAlmostEqual(calculate_dv01(bumped_vals, vals, bump_amount), expected_dv01)
+        expected_dv01 = -5.0
+        self.assertAlmostEqual(calculate_dv01(up_vals, down_vals, bump_amount), expected_dv01)
 
 class TestCalculateConvexity(unittest.TestCase):
     """

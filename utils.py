@@ -335,3 +335,59 @@ def zcbs_from_dates(dates, rate_vals, rate_dates):
 
     # Calculate ZCB values using the time deltas and the integral values
     return zcbs_from_deltas(time_deltas, integral_vals, integral_time_deltas)
+
+def calculate_antithetic_variance(path_results):
+    """
+    Calculate the antithetic variance based on the given path results.
+
+    Parameters:
+    - path_results (ndarray): A 1D or 2D array of path results. If it's 1D, each element corresponds to
+      a result from part of an antithetic pair. If it's 2D, it has shape (num_paths, num_results), where
+      each row corresponds to a different path.
+
+    Returns:
+    - antithetic_variance (float or ndarray): The calculated antithetic variance.
+    """
+    # Ensure path_results is a numpy array
+    path_results = np.asarray(path_results)
+
+    # If the path_results is 1D, assume it's an array of half-pair results
+    if path_results.ndim == 1:
+        # Check if the number of results is even
+        if len(path_results) % 2 != 0:
+            raise ValueError("The number of path results must be even for antithetic variance.")
+
+        # Pair up results (first half with second half)
+        first_half = path_results[:len(path_results)//2]
+        second_half = path_results[len(path_results)//2:]
+
+        # Antithetic averaging: (first_half + second_half) / 2
+        antithetic_values = (first_half + second_half) / 2
+
+        # Calculate variance based on the averaged values
+        antithetic_variance = np.var(antithetic_values)
+
+    # If path_results is 2D, calculate antithetic variance across the paths
+    elif path_results.ndim == 2:
+        # Assume path_results has shape (num_paths, num_results), with paths as rows
+        # and results from each path as columns
+        num_paths = path_results.shape[0]
+        
+        # Check if number of paths is even
+        if num_paths % 2 != 0:
+            raise ValueError("The number of paths must be even for antithetic variance.")
+
+        # Split the array into two parts (pairs of paths)
+        first_half = path_results[:num_paths//2, :]
+        second_half = path_results[num_paths//2:, :]
+
+        # Antithetic averaging for each result across pairs of paths
+        antithetic_values = (first_half + second_half) / 2
+
+        # Calculate variance across the paths
+        antithetic_variance = np.var(antithetic_values, axis=0)
+
+    else:
+        raise ValueError("path_results must be either a 1D or 2D array.")
+
+    return antithetic_variance

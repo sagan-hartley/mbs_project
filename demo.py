@@ -17,6 +17,7 @@ from financial_calculations.mbs import (
     pathwise_evaluate_mbs
 )
 from financial_calculations.cash_flows import (
+    StepDiscounter,
     calculate_dv01,
     calculate_convexity
 )
@@ -32,6 +33,8 @@ PYMNT_DEL_COL = 'Payment Delay'
 def load_treasury_rates_data(rates_file):
     """
     Loads treasury data from a CSV file and evaluate maturity year strings.
+    This function is designed to manipulate data taken directly from the treasury
+    website into a format compatible with the forward curve generation functions.
 
     Parameters:
     rates_file (str): Path to the treasury rates data CSV file.
@@ -43,8 +46,12 @@ def load_treasury_rates_data(rates_file):
     # Read the original CSV into a DataFrame
     df = pd.read_csv(rates_file)
 
+    # Check that the data frame only has one row corresponding to the market close date and coupon rates
+    if df.shape[0] != 1:
+        raise ValueError("The daily treasury rates csv cannot contain more than one row of data.")
+
     # Extract the date
-    date_str = df['Date'].iloc[0]
+    date_str = df['Date'][0]
     date = pd.to_datetime(date_str)
 
     # Remove the 'Date' column to focus on maturity years and rates
@@ -76,7 +83,7 @@ def load_mbs_data(mbs_file):
     mbs_data[SETTLE_DATE_COL] = pd.to_datetime(mbs_data[SETTLE_DATE_COL])
     mbs_data[ORIG_DATE_COL] = pd.to_datetime(mbs_data[ORIG_DATE_COL])
 
-    # Convert each row to an MBS instance and append to the list
+    # Convert each row to an MbsContract instance and append to the list
     mbs_contracts = [
         MbsContract(
             mbs_id=row[MBS_ID_COL],
@@ -222,7 +229,7 @@ def main():
     # Define the start rate based on information from the fine forward curve
     start_rate = fine_curve.rates[0]
 
-    # Define alpha, sigma, and num_iterations
+    # Define the model paramters for the following Hull-White simulations
     alpha = 1
     sigma = 0.01
     num_iterations = 1000
@@ -254,13 +261,12 @@ def main():
     # Plot the ZCB prices based on short rates from the antithetic low path number Hull-White simulation
     plot_hull_white_zcb_prices(hw_low_paths_2, fine_curve)
 
-    # Define a bump amount to create Hull-White simulations where the forward curve has been shocked up and down by this amount
-    # These simulation results will be used to calculate the DV01 and convexity for the value of each MBS
-    bump_amount = 0.0025
-    bumped_up_curve = fine_curve
-    bumped_up_curve.rates = bumped_up_curve.rates + bump_amount
-    bumped_down_curve = fine_curve
-    bumped_down_curve.rates = bumped_down_curve.rates - bump_amount
+    # Define a bump amount (in basis points and decimal) to create Hull-White simulations where the forward curve 
+    # has been shocked up and down by this amount. These simulation results will be used to calculate the DV01 and convexity for the value of each MBS
+    bump_amount_bp = 25
+    bump_amount_dec = 0.0025
+    bumped_up_curve = StepDiscounter(fine_curve.dates, fine_curve.rates + bump_amount_dec)
+    bumped_down_curve = StepDiscounter(fine_curve.dates, fine_curve.rates - bump_amount_dec)
     bumped_up_hw = hull_white_simulate_from_curve(alpha, sigma, bumped_up_curve, short_rate_dates, start_rate, num_iterations)
     bumped_down_hw = hull_white_simulate_from_curve(alpha, sigma, bumped_down_curve, short_rate_dates, start_rate, num_iterations)
 
@@ -271,13 +277,13 @@ def main():
     bumped_down_short_rates = bumped_down_hw[1]
 
     # Simulate expected WALs, values, prices, and their standard deviations for each set of short rates
-    simulated_mbs_values = pathwise_evaluate_mbs(mbs_contracts, short_rates, short_rate_dates)
+    simulated_mbs_values = pathwise_evaluate_mbs(mbs_contracts, short_rates, short_rate_dates, antithetic=True)
     no_antithetic_mbs_values = pathwise_evaluate_mbs(mbs_contracts, no_antithetic_short_rates, short_rate_dates)
-    bumped_up_values = pathwise_evaluate_mbs(mbs_contracts, bumped_up_short_rates, short_rate_dates)
-    bumped_down_values = pathwise_evaluate_mbs(mbs_contracts, bumped_down_short_rates, short_rate_dates)
+    bumped_up_values = pathwise_evaluate_mbs(mbs_contracts, bumped_up_short_rates, short_rate_dates, antithetic=True)
+    bumped_down_values = pathwise_evaluate_mbs(mbs_contracts, bumped_down_short_rates, short_rate_dates, antithetic=True)
 
     for index, mbs in enumerate(simulated_mbs_values):
-        # Print the evalution results for each MBS in the simulated_mbs_values
+        # Print the evalution results for each MBS in simulated_mbs_values
         print(f"MBS_ID: {mbs['mbs_id']}, Expected WAL: {mbs['expected_wal']}, Expected Value: {mbs['expected_value']}, "
               f"Expected Price: {mbs['expected_price']}, \nWAL Path STDev: {mbs['wal_stdev']}, "
               f"Value Path STDev: {mbs['value_stdev']}, Price Path STDev: {mbs['price_stdev']}")
@@ -290,15 +296,13 @@ def main():
         bumped_up_vals = bumped_up_values[index]['vals']
         bumped_down_vals = bumped_down_values[index]['vals']
 
-        # Calculate and print the expected DV01 by averaging the DV01s from bumping up and down 25 basis points
-        # Note that we multiply bump_amount by 100 to convert from decimal to basis points
-        dv01 = (calculate_dv01(bumped_up_vals, vals, bump_amount*100) +
-                calculate_dv01(vals, bumped_down_vals, bump_amount*100)) / 2
+        # Calculate and print the expected DV01 from bumping up and down 25 basis points
+        # Note that we use bump_amount_bp to ensure that units are change in dollar value per one basis point
+        dv01 = calculate_dv01(bumped_up_vals, bumped_down_vals, bump_amount_bp)
         print(f"Expected DV01: {dv01}")
 
         # Calculate and print the convexity measure from the normal and bumped simulation values
-        # Note that like in the DV01 calculation, we multiply bump_amount by 100 to convert from decimal to basis points
-        convexity = calculate_convexity(vals, bumped_up_vals, bumped_down_vals, bump_amount*100)
+        convexity = calculate_convexity(vals, bumped_up_vals, bumped_down_vals, bump_amount_bp)
         print(f"Convexity: {convexity}")
 
 if __name__ == '__main__':

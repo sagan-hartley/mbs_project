@@ -13,7 +13,8 @@ from utils import (
     step_interpolate,
     integral_knots,
     zcbs_from_deltas,
-    zcbs_from_dates
+    zcbs_from_dates,
+    calculate_antithetic_variance
 )
 
 class TestDays360(unittest.TestCase):
@@ -561,5 +562,80 @@ class TestZCBsFromDates(unittest.TestCase):
 
         np.testing.assert_almost_equal(result, expected_values, decimal=5)
 
-if __name__ == '__main__':
+class TestAntitheticVariance(unittest.TestCase):
+
+    def test_1d_array_even_length(self):
+        """Test for 1D array with an even number of elements (antithetic pairs)."""
+        path_results = np.array([10, 12, 15, 14, 20, 18])  # 3 pairs of antithetic results
+        expected_variance = np.var((path_results[:3] + path_results[3:]) / 2)
+        
+        result = calculate_antithetic_variance(path_results)
+        self.assertEqual(result, expected_variance)
+
+    def test_1d_array_odd_length(self):
+        """Test for 1D array with an odd number of elements (should raise ValueError)."""
+        path_results = np.array([10, 12, 15, 14, 20])  # Odd number of elements (invalid)
+        with self.assertRaises(ValueError):
+            calculate_antithetic_variance(path_results)
+
+    def test_2d_array_even_paths(self):
+        """Test for 2D array with an even number of paths (valid for antithetic variance)."""
+        path_results = np.array([[10, 12], [11, 13], [15, 16], [16, 17]])  # 4 paths, 2 results per path
+        expected_variance = np.var((path_results[:2, :] + path_results[2:, :]) / 2, axis=0)
+
+        result = calculate_antithetic_variance(path_results)
+        np.testing.assert_array_equal(result, expected_variance)
+
+    def test_2d_array_odd_paths(self):
+        """Test for 2D array with an odd number of paths (should raise ValueError)."""
+        path_results = np.array([[10, 12], [11, 13], [15, 16]])  # 3 paths, 2 results per path (invalid)
+        with self.assertRaises(ValueError):
+            calculate_antithetic_variance(path_results)
+
+    def test_2d_array_multiple_results(self):
+        """Test for 2D array with multiple results per path (valid for antithetic variance)."""
+        path_results = np.array([[10, 12, 14], [11, 13, 15], [15, 16, 17], [16, 17, 18]])  # 4 paths, 3 results per path
+        expected_variance = np.var((path_results[:2, :] + path_results[2:, :]) / 2, axis=0)
+
+        result = calculate_antithetic_variance(path_results)
+        np.testing.assert_array_equal(result, expected_variance)
+
+    def test_2d_array_return_type(self):
+        """Ensure the return type is a 1D array for a 2D input."""
+        path_results = np.array([[10, 12], [11, 13], [15, 16], [16, 17]])  # 4 paths, 2 results per path
+        result = calculate_antithetic_variance(path_results)
+        
+        self.assertIsInstance(result, np.ndarray)
+        self.assertEqual(result.ndim, 1)  # Return should be 1D array
+
+    def test_1d_array_return_type(self):
+        """Ensure the return type is a float for a 1D input."""
+        path_results = np.array([10, 12, 15, 14, 20, 18])  # 3 pairs of antithetic results
+        result = calculate_antithetic_variance(path_results)
+        
+        self.assertIsInstance(result, float)
+
+    def test_listInput(self):
+        """Test with path_results input as a list"""
+        # Initialize path_results as a list
+        path_results = [
+            [0.02, 0.025, 0.03],
+            [0.03, 0.035, 0.04],
+            [0.015, 0.02, 0.025],
+            [0.025, 0.03, 0.035]
+        ]
+
+        # Expected variance based on average of antithetic pairs
+        expected_variance = np.var([
+            [(0.02 + 0.015) / 2, (0.025 + 0.02) / 2, (0.03 + 0.025) / 2],
+            [(0.03 + 0.025) / 2, (0.035 + 0.03) / 2, (0.04 + 0.035) / 2]
+        ], axis=0)
+        
+        # Calculate variance using the function
+        result_variance = calculate_antithetic_variance(path_results)
+        
+        # Check if result variance matches expected variance
+        np.testing.assert_almost_equal(result_variance, expected_variance, decimal=5)
+
+if __name__ == "__main__":
     unittest.main()

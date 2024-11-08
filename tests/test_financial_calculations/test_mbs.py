@@ -406,6 +406,30 @@ class TestPathwiseEvaluateMBS(unittest.TestCase):
         self.assertNotIn('value_stdev', mbs_result)
         self.assertNotIn('price_stdev', mbs_result)
 
+    def test_antithetic_stdev(self):
+        """
+        Test that setting antithetic=True calculates standard deviation of antithetic pairs correctly
+        """
+        results = pathwise_evaluate_mbs(self.mbs_list, self.short_rates, self.short_rate_dates, antithetic=True)
+        
+        # Check the result structure for the first MBS
+        self.assertEqual(len(results), 1)  # One MBS in the list
+        mbs_result = results[0]
+        
+        # Ensure MBS ID is correct
+        self.assertEqual(mbs_result['mbs_id'], self.mbs.mbs_id)
+        
+        # Check that the results contain expected keys
+        self.assertIn('wals', mbs_result)
+        self.assertIn('vals', mbs_result)
+        self.assertIn('prices', mbs_result)
+        self.assertIn('expected_wal', mbs_result)
+        self.assertIn('expected_value', mbs_result)
+        self.assertIn('expected_price', mbs_result)
+        self.assertIn('wal_stdev', mbs_result)
+        self.assertIn('value_stdev', mbs_result)
+        self.assertIn('price_stdev', mbs_result)
+
     def test_empty_mbs_list(self):
         """
         Test the case when an empty MBS list is provided.

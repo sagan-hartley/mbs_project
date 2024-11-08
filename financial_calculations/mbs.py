@@ -2,7 +2,8 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 from utils import (
-    create_regular_dates_grid
+    create_regular_dates_grid,
+    calculate_antithetic_variance
 )
 from .cash_flows import (
     CashFlowData,
@@ -200,7 +201,9 @@ class MbsContract:
         if not isinstance(self.settle_date, pd.Timestamp):
             raise ValueError(f"Invalid settle_date: {self.settle_date}. Must be a pandas Timestamp.")
 
-def pathwise_evaluate_mbs(mbs_list, short_rates, short_rate_dates, store_vals=True, store_expecteds=True, store_stdevs=True):
+import numpy as np
+
+def pathwise_evaluate_mbs(mbs_list, short_rates, short_rate_dates, store_vals=True, store_expecteds=True, store_stdevs=True, antithetic=False):
     """
     Calculate the expected weighted average life (WAL), value, price, as well as path standard deviations 
     for the Mortgage-Backed Securities (MBS) based on simulated short-rate paths.
@@ -212,9 +215,10 @@ def pathwise_evaluate_mbs(mbs_list, short_rates, short_rate_dates, store_vals=Tr
     - short_rates (list or ndarray): A 2D array (or list) representing the simulated short rates for each path. If a 
       1D array or list is provided, it will be converted to a 2D array with a single row.
     - short_rate_dates (list or ndarray): An array of dates corresponding to each short rate path.
-    - store_vals (bool): If True, store individual path values in the results.
-    - store_expecteds (bool): If True, store expected (mean) values for WAL, value, and price.
-    - store_stdevs (bool): If True, store standard deviations for WAL, value, and price.
+    - store_vals (bool): If True, store individual path values in the results. Default is True.
+    - store_expecteds (bool): If True, store expected (mean) values for WAL, value, and price. Default is True.
+    - store_stdevs (bool): If True, store standard deviations for WAL, value, and price. Default is True.
+    - antithetic (bool): If True, calculate the antithetic variance. If False, calculate the simple variance. Default is False.
 
     Returns:
     - results (list): A list of dictionaries, each containing the results for one MBS.
@@ -284,10 +288,24 @@ def pathwise_evaluate_mbs(mbs_list, short_rates, short_rate_dates, store_vals=Tr
 
         # Store standard deviations if store_stdevs is True
         if store_stdevs:
+
+            # If antithetic is true calculate the standard deviation 
+            # as the square root of the antithetic variance
+            if antithetic:
+                wal_stdev = np.sqrt(calculate_antithetic_variance(wals))
+                value_stdev = np.sqrt(calculate_antithetic_variance(vals))
+                price_stdev = np.sqrt(calculate_antithetic_variance(prices))
+
+            # If not just calculate the standard deviation using numpy.std()
+            else:
+                wal_stdev = np.std(wals),
+                value_stdev = np.std(vals),
+                price_stdev = np.std(prices)
+
             mbs_result.update({
-                'wal_stdev': np.std(wals),
-                'value_stdev': np.std(vals),
-                'price_stdev': np.std(prices)
+                'wal_stdev': wal_stdev,
+                'value_stdev': value_stdev,
+                'price_stdev': price_stdev
             })
 
         # Append the result for this MBS to the results list

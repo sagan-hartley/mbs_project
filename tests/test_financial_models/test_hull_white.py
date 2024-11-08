@@ -80,5 +80,17 @@ class TestHullWhiteModel(unittest.TestCase):
         # Check that initial rates are close to the start rate
         self.assertTrue(np.allclose(r_all[:, 0], self.start_rate, atol=1e-5))
 
+    def test_hull_white_simulate_odd_iterations_antithetic(self):
+        """Test that hull_white_simulate raises an error with odd iterations and antithetic=True."""
+        with self.assertRaises(ValueError):
+            hull_white_simulate(
+                self.alpha,
+                self.sigma,
+                (self.sim_dates, np.ones(len(self.sim_dates)) * 0.02),
+                self.start_rate,
+                iterations=101,  # Odd number of iterations
+                antithetic=True
+            )
+
 if __name__ == "__main__":
     unittest.main()
