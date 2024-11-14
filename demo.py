@@ -79,7 +79,7 @@ def load_mbs_data(mbs_file):
     # Load MBS data from CSV
     mbs_data = pd.read_csv(mbs_file)
 
-    # Apply the datetime parsing to the Settle Date and Origination Date columns
+    # Convert the Settle Date and Origination Date columns to Pandas Timestamps
     mbs_data[SETTLE_DATE_COL] = pd.to_datetime(mbs_data[SETTLE_DATE_COL])
     mbs_data[ORIG_DATE_COL] = pd.to_datetime(mbs_data[ORIG_DATE_COL])
 
@@ -120,6 +120,38 @@ def plot_forward_curves(coarse_curve, fine_curve):
     plt.legend()
     plt.grid()
     plt.show()
+
+def plot_forward_curve_zcb_prices(forward_curves, curve_names, title='Forward Curve ZCB Prices'):
+    """
+    Plots the zcb values based on a list of forward curves.
+
+    Parameters:
+    forward_curves (list): A list of StepDiscounters representing forward curves.
+    curve_names (list): A list of strings representing the names associated with the forward_curves list
+    title (str): A string representing the title of the grpah. Default is 'Hull-White Paths vs Forward Curve ZCB Values'.
+
+    Returns:
+        None
+    """
+    # Generate distinct colors for each currve
+    num_paths = len(forward_curves)
+    colors = sns.color_palette("husl", num_paths)
+
+    plt.figure(figsize=(10, 6))
+
+    for index, forward_curve in enumerate(forward_curves):
+        # Calculate the ZCB prices for the current curve
+        zcb_prices = pathwise_zcb_eval(forward_curve.dates, forward_curve.rates, forward_curve.dates)
+
+        plt.step(forward_curve.dates, zcb_prices, where='post', label=curve_names[index], color=colors[index], alpha=0.6)
+
+    plt.xlabel('Date')
+    plt.ylabel('Price')
+    plt.title(title)
+    plt.legend()
+    plt.grid()
+    plt.show()
+
 
 def plot_hull_white(hull_white, forward_curve, title='Hull-White Average Path vs Forward Curve'):
     """
@@ -170,9 +202,9 @@ def plot_hull_white_paths(hull_white, forward_curve, title='Hull-White Paths vs 
     plt.grid()
     plt.show()
 
-def plot_hull_white_zcb_prices(hull_white, forward_curve, title='Hull-White Paths vs Forward Curve ZCB Values'):
+def plot_hull_white_path_zcb_prices(hull_white, forward_curve, title='Hull-White Paths vs Forward Curve ZCB Values'):
     """
-    Plots the zcb values based on short rates from a Hull-White simulation.
+    Plots the zcb values based on short rate paths from a Hull-White simulation.
     Also plots the zcb values based on forward curve rates for comparison.
 
     Parameters:
@@ -207,6 +239,44 @@ def plot_hull_white_zcb_prices(hull_white, forward_curve, title='Hull-White Path
     plt.grid()
     plt.show()
 
+def plot_hull_white_avg_zcb_prices(hull_whites, forward_curve, title='Hull-White Average Paths vs Forward Curve ZCB Values'):
+    """
+    Plots the zcb values based on average short rate paths from multiple Hull-White simulations.
+    Also plots the zcb values based on forward curve rates for comparison.
+
+    Parameters:
+    hull_whites (list or tuple): A list of results from multiple Hull-White simulations, or just one set of results.
+    forward_curve (StepDiscounter): An instance of StepDiscounter representing a forward curve.
+    title (str): A string representing the title of the grpah. Default is 'Hull-White Paths vs Forward Curve ZCB Values'.
+
+    Returns:
+        None
+    """
+    # Calculate the ZCB prices based on the forward curve data
+    curve_zcb_prices = pathwise_zcb_eval(forward_curve.dates, forward_curve.rates, forward_curve.dates)
+
+    # Generate distinct colors for each simulation
+    num_paths = len(hull_whites)
+    colors = sns.color_palette("husl", num_paths)
+
+    plt.figure(figsize=(10, 6))
+    plt.step(forward_curve.dates, curve_zcb_prices, where='post', label='Forward Curve', color='orange')
+
+    for index, hull_white in enumerate(hull_whites):
+        dates, _ , avg_rates, _ = hull_white # Extract the dates and average rate from the Hull-White simulation
+
+        # Calculate the ZCB prices based on the Hull-White simulation results
+        hw_zcb_prices = pathwise_zcb_eval(dates, avg_rates, dates)
+
+        plt.step(dates, hw_zcb_prices, where='post', label=f'Hull-White Sim {index + 1}', color=colors[index], alpha=0.6)
+
+    plt.xlabel('Date')
+    plt.ylabel('Price')
+    plt.title(title)
+    plt.legend()
+    plt.grid()
+    plt.show()
+
 def main():
     # Define the file paths here
     calibration_file = 'data/daily-treasury-rates.csv'
@@ -223,11 +293,9 @@ def main():
     coarse_curve = bootstrap_forward_curve(market_close_date, calibration_data_with_dates)
     fine_curve = calibrate_fine_curve(market_close_date, calibration_data_with_dates, smoothing_error_weight=50000)
     
-    # Plot the curves
+    # Plot the curves and their ZCB prices
     plot_forward_curves(coarse_curve, fine_curve)
-
-    # Define the start rate based on information from the fine forward curve
-    start_rate = fine_curve.rates[0]
+    plot_forward_curve_zcb_prices([coarse_curve, fine_curve], ['coarse curve', 'fine_curve'])
 
     # Define the model paramters for the following Hull-White simulations
     alpha = 1
@@ -241,16 +309,16 @@ def main():
     short_rate_dates = fine_curve.dates
 
     # Use Hull-White to simulate short rates based on the fine forward curve data
-    hull_white = hull_white_simulate_from_curve(alpha, sigma, fine_curve, short_rate_dates, start_rate, num_iterations)
+    hull_white = hull_white_simulate_from_curve(alpha, sigma, fine_curve, short_rate_dates, num_iterations)
 
     # Create a second simulation with no antithetic sampling to compare to the original Hull-White simulation
-    hw_no_antithetic = hull_white_simulate_from_curve(alpha, sigma, fine_curve, short_rate_dates, start_rate, num_iterations, False)
+    hw_no_antithetic = hull_white_simulate_from_curve(alpha, sigma, fine_curve, short_rate_dates, num_iterations, False)
 
     # Create separate simulations with low number of iterations to plot and compare antithetic vs general sampling paths
     low_path_iterations = 6 # Define the number of paths to be simulated for the low number of iterations simulation
     small_alpha = 0.5 # Define an small alpha to limit the mean reversion effect. This will allow the difference in sampling paths to be more pronounced.
-    hw_low_paths_1 = hull_white_simulate_from_curve(small_alpha, sigma, fine_curve, short_rate_dates, start_rate, low_path_iterations, False)
-    hw_low_paths_2 = hull_white_simulate_from_curve(small_alpha, sigma, fine_curve, short_rate_dates, start_rate, low_path_iterations)
+    hw_low_paths_1 = hull_white_simulate_from_curve(small_alpha, sigma, fine_curve, short_rate_dates, low_path_iterations, False)
+    hw_low_paths_2 = hull_white_simulate_from_curve(small_alpha, sigma, fine_curve, short_rate_dates, low_path_iterations)
 
     # Plot to compare the Hull-White simulations to the fine forward curve
     plot_hull_white(hull_white, fine_curve)
@@ -259,7 +327,10 @@ def main():
     plot_hull_white_paths(hw_low_paths_2, fine_curve, title='Antithetic Hull-White Paths vs Forward Curve')
 
     # Plot the ZCB prices based on short rates from the antithetic low path number Hull-White simulation
-    plot_hull_white_zcb_prices(hw_low_paths_2, fine_curve)
+    plot_hull_white_path_zcb_prices(hw_low_paths_2, fine_curve)
+
+    # Plot the ZCB prices based on the average short rate paths for each of the Hull-White simulations done
+    plot_hull_white_avg_zcb_prices([hull_white, hw_no_antithetic, hw_low_paths_1, hw_low_paths_2], fine_curve)
 
     # Define a bump amount (in basis points and decimal) to create Hull-White simulations where the forward curve 
     # has been shocked up and down by this amount. These simulation results will be used to calculate the DV01 and convexity for the value of each MBS
@@ -267,8 +338,8 @@ def main():
     bump_amount_dec = 0.0025
     bumped_up_curve = StepDiscounter(fine_curve.dates, fine_curve.rates + bump_amount_dec)
     bumped_down_curve = StepDiscounter(fine_curve.dates, fine_curve.rates - bump_amount_dec)
-    bumped_up_hw = hull_white_simulate_from_curve(alpha, sigma, bumped_up_curve, short_rate_dates, start_rate, num_iterations)
-    bumped_down_hw = hull_white_simulate_from_curve(alpha, sigma, bumped_down_curve, short_rate_dates, start_rate, num_iterations)
+    bumped_up_hw = hull_white_simulate_from_curve(alpha, sigma, bumped_up_curve, short_rate_dates, num_iterations)
+    bumped_down_hw = hull_white_simulate_from_curve(alpha, sigma, bumped_down_curve, short_rate_dates, num_iterations)
 
     # Extract the short rate paths from the Hull-White simulations
     short_rates = hull_white[1]

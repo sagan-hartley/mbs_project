@@ -299,7 +299,7 @@ def price_cash_flows(present_value, balance_at_settle, settle_date, last_coupon_
         dirty_price = present_value * par_balance / balance_at_settle
 
     # Calculate the days between the last coupon and settlement dates
-    days_between = days360(last_coupon_date, settle_date)
+    days_between = days360(pd.to_datetime(last_coupon_date), pd.to_datetime(settle_date))
     
     # Compute accrued interest
     accrued_interest = (annual_interest_rate / CASH_DAYS_IN_YEAR) * days_between * par_balance
@@ -395,7 +395,7 @@ def calculate_weighted_average_life(cash_flows, settle_date):
     filtered_paydowns = np.append([initial_paydown], -np.diff(filtered_balances))
 
     # Compute the numerator and denominator for WAL calculation
-    wal_numerator = np.sum(filtered_years * filtered_paydowns)
+    wal_numerator = np.dot(filtered_years, filtered_paydowns)
     wal_denominator = np.sum(filtered_paydowns)
 
     # Calculate WAL
@@ -403,10 +403,10 @@ def calculate_weighted_average_life(cash_flows, settle_date):
 
     return wal
 
-def get_last_coupon_date(cash_flows, settle_date):
+def get_last_accrual_date(cash_flows, settle_date):
     """
-    Get the last coupon date from the cash flows based on the settle date.
-    If no valid coupon dates are found, return the settle date.
+    Get the last accrual date from the cash flows based on the settle date.
+    If no valid accrual dates are found, return the settle date.
     
     Parameters
     ----------
@@ -419,20 +419,20 @@ def get_last_coupon_date(cash_flows, settle_date):
     Returns
     -------
     datetime
-        The last coupon date, which is the payment date from cash_flows right before the settle_date,
-        or settle_date if no valid coupon dates are found.
+        The last accrual date, which is the accrual date from cash_flows right before the settle_date,
+        or settle_date if no valid accrual dates are found.
     """
-    # Find the index of the payment date right before the settle date
-    last_coupon_index = np.searchsorted(cash_flows.payment_dates, settle_date)
+    # Find the index of the accrual date right before the settle date
+    last_accrual_index = np.searchsorted(cash_flows.accrual_dates, settle_date)
 
     # If the index is 0, it means settle_date is before the first date
-    if last_coupon_index == 0:
-        return settle_date  # Return settle_date if no valid coupon dates found
+    if last_accrual_index == 0:
+        return settle_date  # Return settle_date if no valid accrual dates found
 
-    # Return the last valid coupon date before the settle date
-    last_coupon_date = cash_flows.payment_dates[last_coupon_index - 1]
+    # Return the last valid accrual date before the settle date
+    last_accrual_date = cash_flows.accrual_dates[last_accrual_index - 1]
 
-    return last_coupon_date
+    return last_accrual_date
 
 def evaluate_cash_flows(cash_flows, discounter, settle_date, net_annual_interest_rate):
     """
@@ -474,11 +474,11 @@ def evaluate_cash_flows(cash_flows, discounter, settle_date, net_annual_interest
     # Determine the balance at settle based on the filtered cash flows and calculate the price
     balance_at_settle = get_balance_at_settle(cash_flows, filtered_cfs)
     
-    # Determine the last coupon date based on the cash flows and settle date
-    last_coupon_date = get_last_coupon_date(cash_flows, settle_date)
+    # Determine the last accrual date based on the cash flows and settle date
+    last_accrual_date = get_last_accrual_date(cash_flows, settle_date)
     
     # Calculate the price of the cash flows, considering the net annual interest rate and other parameters
-    price = price_cash_flows(value, balance_at_settle, settle_date, last_coupon_date, net_annual_interest_rate)
+    price = price_cash_flows(value, balance_at_settle, settle_date, last_accrual_date, net_annual_interest_rate)
     
     # Calculate the weighted average life (WAL) of the cash flows using the settle date
     wal = calculate_weighted_average_life(cash_flows, settle_date)

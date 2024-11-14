@@ -243,8 +243,8 @@ def pathwise_evaluate_mbs(mbs_list, short_rates, short_rate_dates, store_vals=Tr
         )
 
         # Calculate the Primary Current Coupons (PCCs) and SMMs based on the original short rates
-        pccs = calculate_pccs(short_rates)
-        smms = calculate_smms(pccs, mbs.gross_annual_coupon, market_close_date, mbs.origination_date, mbs.num_months)
+        pccs = calculate_pccs(short_rates, short_rate_dates, scheduled_balances.accrual_dates[:-1])
+        smms = calculate_smms(pccs, mbs.gross_annual_coupon, scheduled_balances.accrual_dates[:-1])
 
         # Initialize a StepDiscounter instance with a placeholder rate, to be updated within each path iteration
         discounter = StepDiscounter(short_rate_dates, short_rates[0, :])

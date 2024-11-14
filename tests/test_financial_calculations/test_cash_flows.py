@@ -11,7 +11,7 @@ from financial_calculations.cash_flows import (
     price_cash_flows,
     get_balance_at_settle,
     calculate_weighted_average_life,
-    get_last_coupon_date,
+    get_last_accrual_date,
     calculate_dv01,
     calculate_convexity
 )
@@ -285,7 +285,7 @@ class TestPriceCashFlows(unittest.TestCase):
         self.present_value = 950
         self.balance_at_settle = 1000
         self.settle_date = datetime(2024, 11, 1)
-        self.last_coupon_date = datetime(2024, 5, 1)
+        self.last_accrual_date = datetime(2024, 5, 1)
         self.annual_interest_rate = 0.05  # 5%
         self.par_balance = 100
         self.expected_dirty_price = self.present_value * self.par_balance / self.balance_at_settle
@@ -298,10 +298,10 @@ class TestPriceCashFlows(unittest.TestCase):
         """
         clean_price = price_cash_flows(
             self.present_value, self.balance_at_settle, self.settle_date,
-            self.last_coupon_date, self.annual_interest_rate, self.par_balance
+            self.last_accrual_date, self.annual_interest_rate, self.par_balance
         )
         
-        days_between = days360(self.last_coupon_date, self.settle_date)
+        days_between = days360(self.last_accrual_date, self.settle_date)
         expected_accrued_interest = (self.annual_interest_rate / CASH_DAYS_IN_YEAR) * days_between * self.par_balance
         expected_clean_price = self.expected_dirty_price - expected_accrued_interest
         
@@ -313,14 +313,14 @@ class TestPriceCashFlows(unittest.TestCase):
         """
         clean_price = price_cash_flows(
             self.present_value, 0, self.settle_date,
-            self.last_coupon_date, self.annual_interest_rate, self.par_balance
+            self.last_accrual_date, self.annual_interest_rate, self.par_balance
         )
         
         self.assertEqual(clean_price, 0)
 
     def test_no_accrued_interest_with_same_dates(self):
         """
-        Test that no accrued interest is added when settle_date equals last_coupon_date.
+        Test that no accrued interest is added when settle_date equals last_accrual_date.
         Ensures the clean price matches the dirty price in this case.
         """
         clean_price = price_cash_flows(
@@ -337,11 +337,11 @@ class TestPriceCashFlows(unittest.TestCase):
         """
         clean_price = price_cash_flows(
             self.present_value, self.balance_at_settle, self.settle_date,
-            self.last_coupon_date, self.annual_interest_rate, par_balance=200
+            self.last_accrual_date, self.annual_interest_rate, par_balance=200
         )
         
         expected_dirty_price = self.present_value * 200 / self.balance_at_settle
-        days_between = days360(self.last_coupon_date, self.settle_date)
+        days_between = days360(self.last_accrual_date, self.settle_date)
         expected_accrued_interest = (self.annual_interest_rate / CASH_DAYS_IN_YEAR) * days_between * 200
         expected_clean_price = expected_dirty_price - expected_accrued_interest
         
@@ -446,11 +446,11 @@ class TestCalculateWeightedAverageLife(unittest.TestCase):
         calculated_wal = calculate_weighted_average_life(self.cash_flows, settle_date)
         self.assertEqual(calculated_wal, 0)  # Expect WAL to be 0
 
-class TestGetLastCouponDate(unittest.TestCase):
+class TestGetLastAccrualDate(unittest.TestCase):
     """
-    Test case for the get_last_coupon_date function using CashFlowData instances.
+    Test case for the get_last_accrual_date function using CashFlowData instances.
     
-    This test case verifies the correctness of the get_last_coupon_date 
+    This test case verifies the correctness of the get_last_accrual_date 
     function in various scenarios including normal cases and edge cases.
     """
 
@@ -464,10 +464,10 @@ class TestGetLastCouponDate(unittest.TestCase):
             "2023-10-01"
         ])
         payment_dates = pd.to_datetime([
-            "2023-01-01",
-            "2023-04-01",
-            "2023-07-01",
-            "2023-10-01"
+            "2023-01-15",
+            "2023-04-15",
+            "2023-07-15",
+            "2023-10-15"
         ])
         principal_payments = np.array([200, 200, 200, 200])
         interest_payments = np.array([20, 16, 12, 8])
@@ -476,37 +476,37 @@ class TestGetLastCouponDate(unittest.TestCase):
             balances, accrual_dates, payment_dates, principal_payments, interest_payments
         )
 
-    def test_get_last_coupon_date_valid(self):
+    def test_get_last_accrual_date_valid(self):
         """Test case where settle_date falls after some cash flow dates."""
         settle_date = pd.to_datetime("2023-05-01")
-        result = get_last_coupon_date(self.cash_flow_data, settle_date)
+        result = get_last_accrual_date(self.cash_flow_data, settle_date)
         self.assertEqual(result, pd.to_datetime("2023-04-01"))
 
-    def test_get_last_coupon_date_before_first_cash_flow(self):
+    def test_get_last_accrual_date_before_first_cash_flow(self):
         """Test case where settle_date is before the first cash flow date."""
         settle_date = pd.to_datetime("2022-12-31")
-        result = get_last_coupon_date(self.cash_flow_data, settle_date)
+        result = get_last_accrual_date(self.cash_flow_data, settle_date)
         self.assertEqual(result, settle_date)
 
-    def test_get_last_coupon_date_exactly_on_cash_flow_date(self):
+    def test_get_last_accrual_date_exactly_on_cash_flow_date(self):
         """Test case where settle_date is exactly on a cash flow date."""
         settle_date = pd.to_datetime("2023-04-01")
-        result = get_last_coupon_date(self.cash_flow_data, settle_date)
+        result = get_last_accrual_date(self.cash_flow_data, settle_date)
         self.assertEqual(result, pd.to_datetime("2023-01-01"))
 
-    def test_get_last_coupon_date_after_last_cash_flow(self):
+    def test_get_last_accrual_date_after_last_cash_flow(self):
         """Test case where settle_date is after the last cash flow date."""
         settle_date = pd.to_datetime("2023-12-31")
-        result = get_last_coupon_date(self.cash_flow_data, settle_date)
+        result = get_last_accrual_date(self.cash_flow_data, settle_date)
         self.assertEqual(result, pd.to_datetime("2023-10-01"))
 
-    def test_get_last_coupon_date_no_cash_flows(self):
+    def test_get_last_accrual_date_no_cash_flows(self):
         """Test case with no cash flows (empty CashFlowData instance)."""
         empty_cash_flow_data = CashFlowData(
             np.array([]), pd.to_datetime([]), pd.to_datetime([]), np.array([]), np.array([])
         )
         settle_date = pd.to_datetime("2023-05-01")
-        result = get_last_coupon_date(empty_cash_flow_data, settle_date)
+        result = get_last_accrual_date(empty_cash_flow_data, settle_date)
         self.assertEqual(result, settle_date)
 
 class TestCalculateDV01(unittest.TestCase):

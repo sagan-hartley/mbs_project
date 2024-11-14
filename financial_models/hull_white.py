@@ -142,8 +142,7 @@ def hull_white_simulate(alpha, sigma, theta, start_rate, iterations=1000, antith
 
     return dates, r_all, r_avg, r_var
 
-def hull_white_simulate_from_curve(alpha, sigma, forward_curve, short_rate_dates,
-                                   start_rate, iterations=1000, antithetic=True):
+def hull_white_simulate_from_curve(alpha, sigma, forward_curve, short_rate_dates, iterations=1000, antithetic=True):
     """
     Simulates short rate paths using the Hull-White model from a given forward curve.
 
@@ -153,7 +152,6 @@ def hull_white_simulate_from_curve(alpha, sigma, forward_curve, short_rate_dates
     - sigma (float) : The volatility of the short rate.
     - forward_curve (StepDiscounter): An instance of StepDiscounter that holds the forward rate data with associated dates.
     - short_rate_dates (array-like) : An array of dates for which the short rate will be simulated.
-    - start_rate (float) : The initial short rate at the starting date.
     - iterations (int) : The number of simulation paths to generate (default: 1000).
     - antithetic (bool) : If True, applies antithetic variates for variance reduction in simulations (default: False).
 
@@ -168,6 +166,6 @@ def hull_white_simulate_from_curve(alpha, sigma, forward_curve, short_rate_dates
     theta = calculate_theta(forward_curve, alpha, sigma, short_rate_dates)
     
     # Run the Hull-White simulation using the calculated theta
-    hw_simulation = hull_white_simulate(alpha, sigma, theta, start_rate, iterations, antithetic)
+    hw_simulation = hull_white_simulate(alpha, sigma, theta, forward_curve.rates[0], iterations, antithetic)
     
     return hw_simulation

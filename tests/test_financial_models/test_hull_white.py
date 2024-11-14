@@ -22,7 +22,7 @@ class TestHullWhiteModel(unittest.TestCase):
         # Parameters for Hull-White model
         self.alpha = 0.03  # Mean reversion rate
         self.sigma = 0.015  # Volatility of short rate
-        self.start_rate = 0.025  # Initial short rate
+        self.start_rate = 0.02 # Initial rate
         self.sim_dates = pd.to_datetime(["2024-01-01", "2024-07-01", "2025-01-01", "2025-07-01", "2026-01-01"])
 
     def test_calculate_theta_no_mean_reversion(self):
@@ -67,7 +67,7 @@ class TestHullWhiteModel(unittest.TestCase):
 
     def test_hull_white_simulate_from_curve(self):
         """Test hull_white_simulate_from_curve end-to-end."""
-        dates, r_all, r_avg, r_var = hull_white_simulate_from_curve(self.alpha, self.sigma, self.forward_curve, self.sim_dates, self.start_rate, iterations=100)
+        dates, r_all, r_avg, r_var = hull_white_simulate_from_curve(self.alpha, self.sigma, self.forward_curve, self.sim_dates, iterations=100)
 
         # Check that the simulated dates match input dates
         np.testing.assert_array_equal(dates, self.sim_dates)
@@ -78,7 +78,7 @@ class TestHullWhiteModel(unittest.TestCase):
         self.assertEqual(len(r_var), len(self.sim_dates))
 
         # Check that initial rates are close to the start rate
-        self.assertTrue(np.allclose(r_all[:, 0], self.start_rate, atol=1e-5))
+        self.assertTrue(np.allclose(r_all[:, 0], self.forward_curve.rates[0], atol=1e-5))
 
     def test_hull_white_simulate_odd_iterations_antithetic(self):
         """Test that hull_white_simulate raises an error with odd iterations and antithetic=True."""
