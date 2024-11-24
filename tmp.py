@@ -4,21 +4,36 @@ from utils import create_regular_dates_grid
 from financial_calculations.bonds import (
     StepDiscounter,
     SemiBondContract,
-    create_semi_bond_cash_flows
+    create_semi_bond_cash_flows,
+    calculate_coupon_rate
 )
 
 from financial_calculations.cash_flows import (
+    CashFlowData,
     calculate_weighted_average_life,
     value_cash_flows,
-    price_cash_flows
+    price_cash_flows,
+    oas_search,
+    evaluate_cash_flows,
+    calculate_convexity
 )
 from financial_calculations.mbs import (
     MbsContract,
     calculate_actual_balances,
-    calculate_scheduled_balances
+    calculate_scheduled_balances,
+    pathwise_evaluate_mbs
+)
+from financial_calculations.forward_curves import (
+    bootstrap_forward_curve
+)
+from financial_models.prepayment import (
+    calculate_pccs,
+    demo,
+    refi_strength,
+    calculate_smms
 )
 
-def exercise_ppm(accrual_dates, scheduled_bals, gross_in_decimal, pcc_func):
+def exercise_ppm(accrual_dates):
     term = accrual_dates.size-1
     smm_vec = np.zeros(term)
     for t in range(term):
@@ -26,44 +41,39 @@ def exercise_ppm(accrual_dates, scheduled_bals, gross_in_decimal, pcc_func):
     return smm_vec
 
 def exercise_rates():
-    discount_rates = np.array([ 
-        0.006983617, 0.050476979, 0.051396376, 0.081552298,
-        0.045289981, 0.029759723, 0.073969810, 0.003862879, 0.044871200,
-        0.080978350, 0.097701138, 0.039590508, 0.049888840, 0.044515418,
-        0.012596944, 0.008476654, 0.055574490, 0.035067305, 0.027167920,
-        0.050371274, 0.032307761, 0.063749816, 0.008043366, 0.000253558,
-        0.009324560, 0.093725868, 0.018888765, 0.024112974, 0.079826671,
-        0.043751914, 0.021189997, 0.056026806, 0.085557557, 0.093818736,
-        0.082996689, 0.054250755, 0.001240193, 0.025839389, 0.016727361,
-        0.080124400, 0.009524058, 0.094808205, 0.038406391, 0.026020178,
-        0.068923774, 0.032581043, 0.042404405, 0.038393590, 0.096957855,
-        0.009599077, 0.082073126, 0.038449382, 0.008570729, 0.031334810,
-        0.020902689, 0.007693663, 0.075357745, 0.005020825, 0.091085792,
-        0.066223832, 0.004008308, 0.082499100, 0.026124495, 0.013431940,
-        0.061752758, 0.015007716, 0.067035171, 0.045503376, 0.071814626,
-        0.035016636, 0.047617013, 0.036258346, 0.052667676, 0.049712667,
-        0.087182244, 0.046867727, 0.056173239, 0.088372271, 0.079152652,
-        0.085316035, 0.050163748, 0.092035497, 0.084334787, 0.012739123,
-        0.086784384, 0.082238121, 0.012813235, 0.045083599, 0.076907051,
-        0.016017826, 0.062559817, 0.071020318, 0.038820162, 0.015048803,
-        0.072752192, 0.026428880, 0.019477818, 0.052925817, 0.013761646,
-        0.025814134, 0.003362728, 0.097627457, 0.022566484, 0.014211485,
-        0.009787030, 0.092952964, 0.062951546, 0.056557990, 0.028243254,
-        0.047776915, 0.094574003, 0.075722719, 0.090114523, 0.037370282,
-        0.060771702, 0.099045273, 0.047339119, 0.030011234, 0.026550502,
-        0.059545442, 0.029886582, 0.017509765, 0.067687091, 0.019248311,
-        0.048724795, 0.087316041, 0.082405213, 0.000383088, 0.052046979,
-        0.034628922, 0.051488041, 0.039743271, 0.054243464, 0.057612575,
-        0.006979987, 0.023464708, 0.087048217, 0.018840603, 0.029695179,
-        0.073279064, 0.057930599, 0.084524461, 0.012712518, 0.012014110,
-        0.082756616, 0.037463306, 0.097436147, 0.080246738, 0.040601990,
-        0.058930602, 0.086115746, 0.088906747, 0.074375454, 0.080537366,
-        0.055050880, 0.051720078, 0.070774953, 0.074015762, 0.096252685,
-        0.052755209, 0.013849016, 0.090894101, 0.001734406, 0.061806135,
-        0.090170217, 0.054950115, 0.079689761, 0.088656840, 0.016996897,
-        0.041160525, 0.061011024, 0.096765968, 0.053248733, 0.084173193,
-        0.008111603, 0.048784956, 0.086477867, 0.046061337, 0.023838794,
-        0.009723155, 0.009723155]) ## 0.050000000 ])
+    discount_rates = np.array([
+                0.037152689, 0.037128935, 0.037023894, 0.036950150, 0.036817723, 0.036694537,
+                0.036541153, 0.036379749, 0.036206621, 0.035993993, 0.035821335, 0.035561345,
+                0.035327796, 0.035046872, 0.034800912, 0.034519662, 0.034301415, 0.034039094,
+                0.033837231, 0.033616164, 0.033441544, 0.033261279, 0.033157687, 0.033033966,
+                0.032966727, 0.032867582, 0.032810329, 0.032709723, 0.032712051, 0.032678288,
+                0.032727890, 0.032802810, 0.032882302, 0.033002311, 0.033121135, 0.033248283,
+                0.033349087, 0.033481500, 0.033548198, 0.033644680, 0.033781438, 0.033828332,
+                0.033988769, 0.034028321, 0.034113045, 0.034196439, 0.034279111, 0.034418190,
+                0.034547958, 0.034691128, 0.034806511, 0.034901733, 0.035025973, 0.035121987,
+                0.035277551, 0.035448268, 0.035594763, 0.035795894, 0.035951161, 0.036123720,
+                0.036305551, 0.036484735, 0.036674024, 0.036889970, 0.037103384, 0.037297479,
+                0.037495734, 0.037618304, 0.037758110, 0.037871465, 0.037921970, 0.038184057,
+                0.038356549, 0.038503437, 0.038620151, 0.038680809, 0.038777976, 0.038810834,
+                0.038922275, 0.038990273, 0.039054130, 0.039116377, 0.039133121, 0.039170768,
+                0.039198293, 0.039257014, 0.039328614, 0.039418949, 0.039505111, 0.039616051,
+                0.039672769, 0.039791109, 0.039855200, 0.039957880, 0.040105254, 0.040204305,
+                0.040368062, 0.040507569, 0.040613730, 0.040767241, 0.040916601, 0.041048484,
+                0.041258544, 0.041402153, 0.041559566, 0.041747338, 0.041897894, 0.042101405,
+                0.042346425, 0.042540885, 0.042794073, 0.042999333, 0.043173543, 0.043377961,
+                0.043518503, 0.043687666, 0.043832287, 0.043967978, 0.044100426, 0.044234340,
+                0.044355315, 0.044483477, 0.044612551, 0.044731461, 0.044877540, 0.045009377,
+                0.045139615, 0.045267296, 0.045386141, 0.045491997, 0.045642418, 0.045756685,
+                0.045902366, 0.046034770, 0.046123281, 0.046218149, 0.046302105, 0.046370548,
+                0.046476574, 0.046569591, 0.046645881, 0.046733122, 0.046782861, 0.046820931,
+                0.046881562, 0.046912064, 0.046960170, 0.047014943, 0.047021509, 0.047065301,
+                0.047046585, 0.047051823, 0.047028825, 0.047009286, 0.046986697, 0.046960333,
+                0.046939068, 0.046912937, 0.046891320, 0.046868599, 0.046843076, 0.046822097,
+                0.046794752, 0.046772979, 0.046748643, 0.046727087, 0.046706961, 0.046683387,
+                0.046663736, 0.046636769, 0.046612991, 0.046588339, 0.046561760, 0.046542331,
+                0.046518816, 0.046500795, 0.046480874, 0.046460978, 0.046441521, 0.046417292,
+                0.046417292
+            ])
     return discount_rates
 
 def print_flows(cash_flows, max_index=None):
@@ -93,27 +103,120 @@ def exercise_ppm(accrual_dates, scheduled_bals, gross_in_decimal, pcc_func):
         smm_vec[t] = t/60 * .01 if t < 60 else .015 - t/120 * .01
     return smm_vec
 
+def load_treasury_rates_data(rates_file):
+    """
+    Loads treasury data from a CSV file and evaluate maturity year strings.
+    This function is designed to manipulate data taken directly from the treasury
+    website into a format compatible with the forward curve generation functions.
+
+    Parameters:
+    rates_file (str): Path to the treasury rates data CSV file.
+
+    Returns:
+    date (datetime): The effective date of the treasury rates
+    maturity_rate_tuples (list): A list of tuples representing the treasury data.
+    """
+    # Read the original CSV into a DataFrame
+    df = pd.read_csv(rates_file)
+
+    # Check that the data frame only has one row corresponding to the market close date and coupon rates
+    if df.shape[0] != 1:
+        raise ValueError("The daily treasury rates csv cannot contain more than one row of data.")
+
+    # Extract the date
+    date_str = df['Date'][0]
+    date = pd.to_datetime(date_str)
+
+    # Remove the 'Date' column to focus on maturity years and rates
+    maturity_year_columns = df.columns[1:]  # All columns except 'Date'
+    
+    # Extract the rates from the first row (since it's only one row of data)
+    rates = df.iloc[0, 1:].tolist()  # All values in the first row except the date
+    
+    # Create a list of tuples with maturity year (as int) and corresponding rate (as decimal)
+    maturity_rate_tuples = [(int(col.split()[0]), rate/100) for col, rate in zip(maturity_year_columns, rates)]
+    
+    # Return the date and the list of tuples
+    return date, maturity_rate_tuples
+
+calibration_file = 'data/daily-treasury-rates.csv'
+    
+# Load data
+market_close_date, calibration_data = load_treasury_rates_data(calibration_file)
+
+# Get the calibration data as a tuple including the date for each element
+calibration_data_with_dates = np.array([(market_close_date,) + calibration_bond for calibration_bond in calibration_data])
+
+# Calculate forward curves
+coarse_curve = bootstrap_forward_curve(market_close_date, calibration_data_with_dates)
+
+start_date = pd.to_datetime("2026-05-15")
+#print(100*calculate_coupon_rate(start_date, 10, coarse_curve))
+
 if (True):
     print("\n\nExercise MBS info...")
-    date_grid = create_regular_dates_grid("1/1/2008", "1/1/2023", 'm')
+    date_grid = create_regular_dates_grid("10/1/2024", "10/1/2039", 'm')
     rate_grid = exercise_rates()
+    up_rates = rate_grid + 0.005
+    down_rates = rate_grid - 0.005
     discounter = StepDiscounter(date_grid, rate_grid)
+    zcb_dates = pd.to_datetime(["2024-10-01", "2024-11-01", "2027-02-15", "2039-10-15"])
+    print(discounter.zcbs_from_dates(zcb_dates))
+    fake_flows = CashFlowData(
+        balances=np.array([21.0, 16.0, 9.0, 0.0]),
+        accrual_dates=create_regular_dates_grid("10/1/2024", "1/1/2025", 'm'),
+        payment_dates=create_regular_dates_grid("10/25/2024", "1/25/2025", 'm'),
+        principal_payments=np.array([0.0, 5.0, 7.0, 9.0]),
+        interest_payments=np.array([0.0, 0.0, 0.0, 0.0])
+    )
+    print("\n\nsettle value of exercise fake cash flows")
+    print(value_cash_flows(discounter, fake_flows, "10/01/2024"))
+    print(value_cash_flows(discounter, fake_flows, "10/15/2024"))
+    print(value_cash_flows(discounter, fake_flows, "11/01/2024"))
+    print(value_cash_flows(discounter, fake_flows, "11/15/2024"))
     term = 180
     gross = .070
     net = gross -.0025
     delay = 24
-    mbs_contract = MbsContract('id', 100, date_grid[0], term, gross, net, delay, pd.to_datetime("1/01/2008"))
+    settle = pd.to_datetime("10/15/2024")
+    mbs_contract = MbsContract('id', 100, date_grid[0], term, gross, net, delay, pd.to_datetime("10/01/2024"))
     sched_mbs_flows = calculate_scheduled_balances(mbs_contract.balance, mbs_contract.origination_date, mbs_contract.num_months, mbs_contract.gross_annual_coupon)
     smms = exercise_ppm(sched_mbs_flows.accrual_dates, sched_mbs_flows.balances, mbs_contract.gross_annual_coupon, 0)
-    mbs_flows = calculate_actual_balances(sched_mbs_flows, smms, mbs_contract.net_annual_coupon)
-    print_flows(mbs_flows, 12)
+    bad_flows = calculate_actual_balances(sched_mbs_flows, smms, net)
+    print(f"oas: {oas_search(bad_flows, discounter, settle)}")
+    pccs = calculate_pccs(rate_grid, sched_mbs_flows.accrual_dates, sched_mbs_flows.accrual_dates, 0.033)
+    pccs_up = calculate_pccs(up_rates, sched_mbs_flows.accrual_dates, sched_mbs_flows.accrual_dates, 0.033)
+    pccs_down = calculate_pccs(down_rates, sched_mbs_flows.accrual_dates, sched_mbs_flows.accrual_dates, 0.033)
+    smms1 = calculate_smms(pccs, 0.07, date_grid)[:-1]
+    smms_up = calculate_smms(pccs_up, 0.07, date_grid)[:-1]
+    smms_down = calculate_smms(pccs_down, 0.07, date_grid)[:-1]
+    mbs_flows = calculate_actual_balances(sched_mbs_flows, smms1, mbs_contract.net_annual_coupon)
+    mbs_flows_up = calculate_actual_balances(sched_mbs_flows, smms_up, mbs_contract.net_annual_coupon)
+    mbs_flows_down = calculate_actual_balances(sched_mbs_flows, smms_down, mbs_contract.net_annual_coupon)
+    print_flows(mbs_flows, 20)
     print("\n\nsettle value of exercise MBS cash flows")
-    print(value_cash_flows(discounter, mbs_flows, "1/01/2008"))
-    print(value_cash_flows(discounter, mbs_flows, "1/15/2008"))
+    print(value_cash_flows(discounter, mbs_flows, "10/01/2024"))
+    print(value_cash_flows(discounter, mbs_flows, "10/15/2024"))
+    print(value_cash_flows(discounter, mbs_flows, "11/10/2024"))
+    print(value_cash_flows(discounter, mbs_flows, "11/15/2024"))
 
-    print(price_cash_flows(value_cash_flows(discounter, mbs_flows, "1/01/2008"), 100, "1/01/2008", "1/01/2008", mbs_contract.net_annual_coupon))
-    print(price_cash_flows(value_cash_flows(discounter, mbs_flows, "2/15/2008"), 99.68450506248092, "2/15/2008", "2/01/2008", mbs_contract.net_annual_coupon))
+    print(value_cash_flows(discounter, mbs_flows_up, "10/01/2024"))
+    print(value_cash_flows(discounter, mbs_flows_up, "10/15/2024"))
+    print(value_cash_flows(discounter, mbs_flows_up, "11/10/2024"))
+    print(value_cash_flows(discounter, mbs_flows_up, "11/15/2024"))
+
+    print(value_cash_flows(discounter, mbs_flows_down, "10/01/2024"))
+    print(value_cash_flows(discounter, mbs_flows_down, "10/15/2024"))
+    print(value_cash_flows(discounter, mbs_flows_down, "11/10/2024"))
+    print(value_cash_flows(discounter, mbs_flows_down, "11/15/2024"))
+
+    print("\n\settle price of exercise MBS cash flows")
+    print(price_cash_flows(value_cash_flows(discounter, mbs_flows, "10/01/2024"), 100, "10/01/2024", "10/01/2024", mbs_contract.net_annual_coupon))
+    print(price_cash_flows(value_cash_flows(discounter, mbs_flows, "11/15/2024"), 99.68450506248092, "11/15/2024", "11/01/2024", mbs_contract.net_annual_coupon))
 
     print("\n\nsettle WAL of exercise  MBS cash flows")
-    print(calculate_weighted_average_life(mbs_flows, "1/01/2008"))
-    print(calculate_weighted_average_life(mbs_flows, "1/15/2008"))
+    print(calculate_weighted_average_life(mbs_flows, "10/01/2024"))
+    print(calculate_weighted_average_life(mbs_flows, "10/15/2024"))
+
+    path_evals = pathwise_evaluate_mbs([mbs_contract], [rate_grid-0.005+0.03, rate_grid+0.03, rate_grid+0.005+0.03], date_grid)
+    print(path_evals[0]['vals'])

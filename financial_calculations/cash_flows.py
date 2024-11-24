@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+from scipy.optimize import minimize
 from utils import (
     days360,
     years_from_reference,
@@ -65,11 +66,12 @@ class CashFlowData:
             raise ValueError("All input arrays must have the same length.")
         
         # Initialize attributes if all inputs are of the same length
-        self.balances = balances
-        self.accrual_dates = accrual_dates
-        self.payment_dates = payment_dates
-        self.principal_payments = principal_payments
-        self.interest_payments = interest_payments
+        # If inputs are of the wrong type, convert them if possible
+        self.balances = np.array(balances)
+        self.accrual_dates = pd.to_datetime(accrual_dates)
+        self.payment_dates = pd.to_datetime(payment_dates)
+        self.principal_payments = np.array(principal_payments)
+        self.interest_payments = np.array(interest_payments)
 
     def get_size(self):
         """
@@ -486,17 +488,83 @@ def evaluate_cash_flows(cash_flows, discounter, settle_date, net_annual_interest
     # Return the WAL, present value, and price of the cash flows as a tuple
     return wal, value, price
 
-def calculate_dv01(up_vals, down_vals, bump_amount):
+def oas_search(cash_flows, discounter, settle_date, target=100, initial_guess=0.03, tolerance=1e-4):
+    """
+    Perform an Option-Adjusted Spread (OAS) search to align the computed bond value with the target price.
+
+    Parameters:
+    - cash_flows (CashFlowData): An instance of CashFlowData.
+    - discounter (StepDiscounter): An instance of StepDiscounter representing a forward curve 
+    - settle_date (Timestamp): The settlement date for the cash flows.
+    - target (float, optional): The target price of the bond/security. Default is 100 (par value).
+    - initial_guess (float, optional): Initial guess for the OAS (in decimal form, e.g., 0.03 for 3%). 
+                                       Default is 0.03.
+    - tolerance (float, optional): How far off the squared difference between the value using 
+            discount rates plus the oas and the target can be from zero.
+
+    Returns:
+    - oas (float): The computed Option-Adjusted Spread (in decimal form).
+
+    Raises:
+    - ValueError: If the minimization process fails to converge.
+    """
+    # Extract the starting rates to be used for the objective function
+    start_rates = discounter.rates
+
+    def objective(oas):
+        """
+        Objective function to minimize. Adjusts the discount rates using the OAS and computes the squared error
+        between the present value of cash flows and the target price.
+
+        Parameters:
+        - oas (float): The Option-Adjusted Spread to test (in decimal form).
+
+        Returns:
+        - float: The squared difference between the computed price and the target.
+        """
+        # Adjust discount rates by adding the current OAS value to the starting rates
+        discounter.set_rates(start_rates + oas)
+        
+        # Compute the present value of cash flows using the updated discounter
+        value = value_cash_flows(discounter, cash_flows, settle_date)
+        
+        # Return the squared difference from the target price
+        return (value - target) ** 2
+
+    # Perform the optimization using the L-BFGS-B method
+    result = minimize(
+        objective, 
+        x0=initial_guess, 
+        method='L-BFGS-B', 
+        bounds=[(-1, 1)],
+        options={'ftol': target * 1e-7}  # Tolerance proportional to the target
+    )
+
+    # Reset the discounter back to its original rates
+    discounter.set_rates(start_rates)
+
+    # Check for convergence
+    if not result.success:
+        raise ValueError("Minimization did not converge. Try adjusting the initial guess or checking input data.")
+    
+    # Check that result satisfies the input error tolerance
+    if result.fun > tolerance:
+        raise ValueError(f"Optimization result is not within tolerance: {result.fun:.6f}")
+    
+    # Return the computed OAS
+    return result.x[0]
+
+def calculate_dv01(up_val, down_val, bump_amount):
     """
     Calculate the dollar value of one basis point (DV01), 
     which represents the price change for a 1 basis point shift in yield.
 
     Parameters:
     -----------
-    up_vals : array-like
-        Array of values when rates are bumped up by a specified amount.
-    down_vals : array-like
-        Array of values when rates are bumped down by a specified amount.
+    up_val : float
+        The value of a security when rates are bumped up by a specified amount.
+    down_val : float
+        The value of a security when rates are bumped down by a specified amount.
     bump_amount : float
         The amount by which rates were bumped to obtain `bumped_vals`.
 
@@ -507,47 +575,36 @@ def calculate_dv01(up_vals, down_vals, bump_amount):
 
     Raises:
     -------
-    ValueError
-        If `bumped_vals` and `vals` do not have the same shape.
     ZeroDivisionError
         If 'bump_amount' is 0.
-    """
-    # Convert inputs to Numpy arrays if they are not already
-    up_vals = np.array(up_vals)
-    down_vals = np.array(down_vals)
-
-    # Check for shape compatibility
-    if up_vals.shape != down_vals.shape:
-        raise ValueError("bumped_vals and vals must have the same shape.")
-    
+    """ 
     # Check bump_amount is nonzero
     if bump_amount == 0:
         raise ZeroDivisionError("bump_amount cannot be zero.")
 
     # Calculate the DV01   
-    dv01 = (np.mean(up_vals) - np.mean(down_vals)) / (2*bump_amount)
+    dv01 = (np.mean(up_val) - np.mean(down_val)) / (2*bump_amount)
 
     return dv01
 
-def calculate_convexity(vals, bumped_up_vals, bumped_down_vals, bump_amount):
+def calculate_convexity(val, bumped_up_val, bumped_down_val, bump_amount):
     """
-    Calculate the convexity of a series of values based on mean values of the original,
-    bumped-up, and bumped-down arrays.
+    Calculate the convexity of a security based on the the original,
+    bumped-up, and bumped-down values.
 
     Convexity is calculated as:
-        ((mean(bumped_up_vals) - 2 * mean(vals) + mean(bumped_down_vals)) /
-         (mean(vals) * (bump_amount ** 2)))
+        (bumped_up_val - 2 * val + bumped_down_vals) / (bump_amount ** 2)
 
     Parameters
     ----------
-    vals : array-like
-        Original array of values.
-    bumped_up_vals : array-like
-        Array of values with a positive bump applied.
-    bumped_down_vals : array-like
-        Array of values with a negative bump applied.
+    val : float
+        Original value of the security
+    bumped_up_val : float
+        The value of a security when rates are bumped up by a specified amount.
+    bumped_down_val : float
+        The value of a security when rates are bumped down by a specified amount.
     bump_amount : float
-        The amount of the bump applied to generate `bumped_up_vals` and `bumped_down_vals`.
+        The amount of the bump applied to generate `bumped_up_val` and `bumped_down_val`.
 
     Returns
     -------
@@ -558,29 +615,12 @@ def calculate_convexity(vals, bumped_up_vals, bumped_down_vals, bump_amount):
     ------
     ZeroDivisionError
         If `bump_amount` is zero.
-    ValueError
-        If input arrays do not have the same shape.
     """
-
-    # Convert inputs to numpy arrays if they aren't already
-    vals = np.asarray(vals)
-    bumped_up_vals = np.asarray(bumped_up_vals)
-    bumped_down_vals = np.asarray(bumped_down_vals)
-
-    # Check that arrays have the same shape
-    if vals.shape != bumped_up_vals.shape or vals.shape != bumped_down_vals.shape:
-        raise ValueError("All input arrays must have the same shape.")
-
     # Raise ZeroDivisionError for zero bump amount
     if bump_amount == 0:
         raise ZeroDivisionError("Bump amount must be non-zero.")
 
-    # Calculate the means of each array
-    mean_vals = np.mean(vals)
-    mean_bumped_up = np.mean(bumped_up_vals)
-    mean_bumped_down = np.mean(bumped_down_vals)
-
-    # Calculate convexity using the mean values
-    convexity = (mean_bumped_up - 2 * mean_vals + mean_bumped_down) / (mean_vals * (bump_amount ** 2))
+    # Calculate convexity
+    convexity = (bumped_up_val - 2 * val + bumped_down_val) / (bump_amount ** 2)
 
     return convexity

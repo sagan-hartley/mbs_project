@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from utils import years_from_reference
+from utils import create_regular_dates_grid
 
 SEASONAL_FACTORS_ARRAY = np.array([
         0.75,  # January (month 1)
@@ -75,7 +75,7 @@ def refi_strength(spreads):
     >>> refi_strength(spreads)
     array([0.    , 0.    , 0.02125, 0.0425 , 0.0425 ])
     """
-    return np.clip(0.0425 / 0.015 * spreads, 0.0, 0.0425)
+    return (0.0425 / 0.015) * np.clip(spreads, 0.0, 0.015)
 
 def demo(smm_dates, base_smm=0.005):
     """
@@ -85,13 +85,14 @@ def demo(smm_dates, base_smm=0.005):
         Demo(age) = seasoning(age) * seasonal(month)
 
     where:
-    - seasoning(age) = max(1, age / 18) * base_smm
+    - seasoning(age) = min(1, age / 18) * base_smm
     - seasonal(month_of_year) represents a seasonal adjustment based on the month of the year.
 
     Parameters
     ----------
     smm_dates : pd.DatetimeIndex or array-like
-        A Pandas DatetimeIndex representing each date in the loan term.
+        A Pandas DatetimeIndex representing each date in the loan term. 
+        This must be a regular monthly grid.
     base_smm : float
         The base demographic single month mortality rate
 
@@ -99,16 +100,25 @@ def demo(smm_dates, base_smm=0.005):
     -------
     np.ndarray
         An array of demographic factors for each date in the loan term.
+
+    Raises
+    ------
+    ValueError
+        If smm_dates is not a regular monthly grid from start to end.
     """
     # Ensure smm_dates is a Pandas DatetimeIndex
     if not isinstance(smm_dates, pd.DatetimeIndex):
         smm_dates = pd.to_datetime(smm_dates)
 
+    # Check that smm_dates is a monthly date grid from start to end date; raise an error if not
+    if np.any(smm_dates != create_regular_dates_grid(smm_dates[0], smm_dates[-1], 'm')):
+        raise ValueError(f"smm_dates must be a monthly grid. This grid was input: {smm_dates}")
+
     # Calculate ages in months from the reference date
-    ages_in_months = years_from_reference(smm_dates[0], smm_dates) * 12
+    ages_in_months = np.arange(len(smm_dates))
 
     # Seasoning factors based on age in months
-    seasoning_factors = np.maximum(1, ages_in_months / 18) * base_smm
+    seasoning_factors = np.minimum(1, ages_in_months / 18) * base_smm
 
     # Calculate month of year for each date in the term
     months_of_year = smm_dates.month
@@ -138,7 +148,7 @@ def calculate_smms(pccs, coupon, smm_dates, lag_months=0):
     coupon : float
         The coupon rate of the MBS, representing the fixed interest rate paid to bondholders.
     smm_dates : pd.DatetimeIndex, ndarray, or list
-        A Pandas DatetimeIndex or array-like of dates representing the loan's term (each date corresponds to a month).
+        A Pandas DatetimeIndex or array-like of dates representing the loan's term. This must be a regular monthly grid.
         These dates are used to calculate demographic factors (e.g., age and seasonal adjustments).
     lag_months : int, optional
         The number of months by which to lag the PCC values. The lag introduces delay into the SMM calculation,
@@ -153,7 +163,10 @@ def calculate_smms(pccs, coupon, smm_dates, lag_months=0):
     Raises
     ------
     ValueError
-        If the dimensions of `pccs` do not match the length of `smm_dates`, or if the input values are inconsistent.
+        If the dimensions of `pccs` do not match the length of `smm_dates`.
+        If 'pccs' is not a 1d or 2d array.
+    IndexError
+        If lag_months causes smms_dates[0] + lag_months to be out of bounds of smm_dates.
     """
     
     # Ensure `smm_dates` is a Pandas DatetimeIndex for compatibility with date calculations
@@ -164,8 +177,16 @@ def calculate_smms(pccs, coupon, smm_dates, lag_months=0):
     pccs = np.asarray(pccs)
     
     # Validate that the number of columns in `pccs` matches the length of `smm_dates`
-    if len(smm_dates) != pccs.shape[1]:
-        raise ValueError("The length of smm_dates must match the number of months in pccs.")
+    if pccs.ndim == 1:
+        # If pccs is a 1D array, check if its length matches the length of smm_dates
+        if len(smm_dates) != len(pccs):
+            raise ValueError("The length of smm_dates must match the length of pccs.")
+    elif pccs.ndim == 2:
+        # If pccs is a 2D array, check if the number of columns matches the length of smm_dates
+        if len(smm_dates) != pccs.shape[1]:
+            raise ValueError("The length of smm_dates must match the number of months in pccs.")
+    else:
+        raise ValueError("pccs must be a 1D or 2D array.")
     
     # Apply the lag to PCCs if `lag_months` is specified
     if lag_months != 0:

@@ -48,9 +48,19 @@ class TestPrepaymentModel(unittest.TestCase):
             '2024-11-01', '2024-12-01'
         ])
         base_smm = 0.005
-        expected_demo_factors = np.array([0.00375, 0.0042, 0.00465, 0.0051, 0.00555, 0.006, 0.006,
-                                          0.00555, 0.0051, 0.00465, 0.0042, 0.00375])
+        expected_demo_factors = np.array([0.0, 0.000233, 0.000517, 0.00085, 0.001233, 0.001667, 0.002,
+                                          0.002158, 0.002267, 0.002325, 0.002333, 0.002292])
         np.testing.assert_array_almost_equal(demo(smm_dates, base_smm), expected_demo_factors)
+
+    def test_demo_invalid_smm_dates(self):
+        """Test the invalid case where smm_dates is not a regular monthly grid"""
+        invalid_smm_dates = pd.to_datetime([
+            '2024-01-01', '2024-02-02', '2024-03-01'
+        ])
+        base_smm = 0.005
+
+        with self.assertRaises(ValueError):
+            demo(invalid_smm_dates, base_smm)
 
     def test_calculate_smms(self):
         """Test the Single Monthly Mortality (SMM) calculation."""
@@ -61,8 +71,8 @@ class TestPrepaymentModel(unittest.TestCase):
         ])
         
         expected_smms = np.array([
-            [0.04625, 0.032533, 0.00465 ],
-            [0.04625, 0.018367, 0.00465 ]
+            [0.0425, 0.028567, 0.000517],
+            [0.0425, 0.0144, 0.000517]
         ])
 
         smms = calculate_smms(pccs, coupon, smm_dates)
@@ -79,6 +89,30 @@ class TestPrepaymentModel(unittest.TestCase):
         with self.assertRaises(ValueError):
             calculate_smms(pccs, coupon, smm_dates)
 
+    def test_calculate_smms_3d_pccs(self):
+        """Test the invalid case where PCCs is not 1 or 2-dimensional"""
+        three_d_pccs = np.array([[[0.06, 0.07, 0.08], [0.065, 0.075, 0.08]]])
+        coupon = 0.08
+        smm_dates = pd.to_datetime([
+            '2024-01-01', '2024-02-01', '2024-03-01'  # 3 months
+        ])
+        
+        with self.assertRaises(ValueError):
+            calculate_smms(three_d_pccs, coupon, smm_dates)
+
+    def test_calculate_smms_1d_pccs(self):
+        """Test the case where PCCs is a 1d array"""
+        one_d_pccs = np.array([0.06, 0.07, 0.08])
+        coupon = 0.08
+        smm_dates = pd.to_datetime([
+            '2024-01-01', '2024-02-01', '2024-03-01'
+        ])
+        
+        expected_smms = np.array([0.0425, 0.028567, 0.000517])
+
+        smms = calculate_smms(one_d_pccs, coupon, smm_dates)
+        np.testing.assert_array_almost_equal(smms, expected_smms)
+
     def test_calculate_smms_with_lag_one_month(self):
         """Test SMM calculation with a 1-month lag on PCCs."""
         pccs = np.array([[0.06, 0.07, 0.08], [0.065, 0.075, 0.085]])
@@ -88,8 +122,8 @@ class TestPrepaymentModel(unittest.TestCase):
         # Expected SMM with 1-month lag
         # Note that demographic factors are not lagged
         expected_smms = np.array([
-            [0.04625, 0.0467, 0.032983],
-            [0.04625, 0.0467, 0.018817]
+            [0.0425, 0.042733, 0.02885],
+            [0.0425, 0.042733, 0.014683]
         ])
 
         smms = calculate_smms(pccs, coupon, smm_dates, lag_months=1)
@@ -104,8 +138,8 @@ class TestPrepaymentModel(unittest.TestCase):
         # Expected SMM with 2-month lag
         # Note that demographic factors are not lagged
         expected_smms = np.array([
-            [0.04625, 0.0467, 0.04715],
-            [0.04625, 0.0467, 0.04715]
+            [0.0425, 0.042733, 0.043017],
+            [0.0425, 0.042733, 0.043017]
         ])
 
         smms = calculate_smms(pccs, coupon, smm_dates, lag_months=2)
