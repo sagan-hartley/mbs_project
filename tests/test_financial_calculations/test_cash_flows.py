@@ -11,7 +11,7 @@ from financial_calculations.cash_flows import (
     price_cash_flows,
     get_balance_at_settle,
     calculate_weighted_average_life,
-    get_last_accrual_date,
+    get_settle_accrual_date,
     oas_search,
     calculate_dv01,
     calculate_convexity
@@ -448,11 +448,11 @@ class TestCalculateWeightedAverageLife(unittest.TestCase):
         calculated_wal = calculate_weighted_average_life(self.cash_flows, settle_date)
         self.assertEqual(calculated_wal, 0)  # Expect WAL to be 0
 
-class TestGetLastAccrualDate(unittest.TestCase):
+class TestGetSettleAccrualDate(unittest.TestCase):
     """
-    Test case for the get_last_accrual_date function using CashFlowData instances.
+    Test case for the get_settle_accrual_date function using CashFlowData instances.
     
-    This test case verifies the correctness of the get_last_accrual_date 
+    This test case verifies the correctness of the get_settle_accrual_date 
     function in various scenarios including normal cases and edge cases.
     """
 
@@ -478,37 +478,37 @@ class TestGetLastAccrualDate(unittest.TestCase):
             balances, accrual_dates, payment_dates, principal_payments, interest_payments
         )
 
-    def test_get_last_accrual_date_valid(self):
+    def test_get_settle_accrual_date_valid(self):
         """Test case where settle_date falls after some cash flow dates."""
         settle_date = pd.to_datetime("2023-05-01")
-        result = get_last_accrual_date(self.cash_flow_data, settle_date)
+        result = get_settle_accrual_date(self.cash_flow_data, settle_date)
         self.assertEqual(result, pd.to_datetime("2023-04-01"))
 
-    def test_get_last_accrual_date_before_first_cash_flow(self):
+    def test_get_settle_accrual_date_before_first_cash_flow(self):
         """Test case where settle_date is before the first cash flow date."""
         settle_date = pd.to_datetime("2022-12-31")
-        result = get_last_accrual_date(self.cash_flow_data, settle_date)
+        result = get_settle_accrual_date(self.cash_flow_data, settle_date)
         self.assertEqual(result, settle_date)
 
-    def test_get_last_accrual_date_exactly_on_cash_flow_date(self):
+    def test_get_settle_accrual_date_exactly_on_cash_flow_date(self):
         """Test case where settle_date is exactly on a cash flow date."""
         settle_date = pd.to_datetime("2023-04-01")
-        result = get_last_accrual_date(self.cash_flow_data, settle_date)
+        result = get_settle_accrual_date(self.cash_flow_data, settle_date)
         self.assertEqual(result, pd.to_datetime("2023-01-01"))
 
-    def test_get_last_accrual_date_after_last_cash_flow(self):
+    def test_get_settle_accrual_date_after_last_cash_flow(self):
         """Test case where settle_date is after the last cash flow date."""
         settle_date = pd.to_datetime("2023-12-31")
-        result = get_last_accrual_date(self.cash_flow_data, settle_date)
+        result = get_settle_accrual_date(self.cash_flow_data, settle_date)
         self.assertEqual(result, pd.to_datetime("2023-10-01"))
 
-    def test_get_last_accrual_date_no_cash_flows(self):
+    def test_get_settle_accrual_date_no_cash_flows(self):
         """Test case with no cash flows (empty CashFlowData instance)."""
         empty_cash_flow_data = CashFlowData(
             np.array([]), pd.to_datetime([]), pd.to_datetime([]), np.array([]), np.array([])
         )
         settle_date = pd.to_datetime("2023-05-01")
-        result = get_last_accrual_date(empty_cash_flow_data, settle_date)
+        result = get_settle_accrual_date(empty_cash_flow_data, settle_date)
         self.assertEqual(result, settle_date)
 
 class TestOASSearch(unittest.TestCase):

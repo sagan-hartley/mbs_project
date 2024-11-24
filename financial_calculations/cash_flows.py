@@ -403,9 +403,9 @@ def calculate_weighted_average_life(cash_flows, settle_date):
 
     return wal
 
-def get_last_accrual_date(cash_flows, settle_date):
+def get_settle_accrual_date(cash_flows, settle_date):
     """
-    Get the last accrual date from the cash flows based on the settle date.
+    Get the settle accrual date from the cash flows.
     If no valid accrual dates are found, return the settle date.
     
     Parameters
@@ -419,7 +419,7 @@ def get_last_accrual_date(cash_flows, settle_date):
     Returns
     -------
     datetime
-        The last accrual date, which is the accrual date from cash_flows right before the settle_date,
+        The settle accrual date, which is the accrual date from cash_flows right before the settle_date,
         or settle_date if no valid accrual dates are found.
     """
     # Find the index of the accrual date right before the settle date
@@ -430,9 +430,9 @@ def get_last_accrual_date(cash_flows, settle_date):
         return settle_date  # Return settle_date if no valid accrual dates found
 
     # Return the last valid accrual date before the settle date
-    last_accrual_date = cash_flows.accrual_dates[last_accrual_index - 1]
+    settle_accrual_date = cash_flows.accrual_dates[last_accrual_index - 1]
 
-    return last_accrual_date
+    return settle_accrual_date
 
 def evaluate_cash_flows(cash_flows, discounter, settle_date, net_annual_interest_rate):
     """
@@ -474,11 +474,11 @@ def evaluate_cash_flows(cash_flows, discounter, settle_date, net_annual_interest
     # Determine the balance at settle based on the filtered cash flows and calculate the price
     balance_at_settle = get_balance_at_settle(cash_flows, filtered_cfs)
     
-    # Determine the last accrual date based on the cash flows and settle date
-    last_accrual_date = get_last_accrual_date(cash_flows, settle_date)
+    # Determine the settle accrual date based on the cash flows and settle date
+    settle_accrual_date = get_settle_accrual_date(cash_flows, settle_date)
     
     # Calculate the price of the cash flows, considering the net annual interest rate and other parameters
-    price = price_cash_flows(value, balance_at_settle, settle_date, last_accrual_date, net_annual_interest_rate)
+    price = price_cash_flows(value, balance_at_settle, settle_date, settle_accrual_date, net_annual_interest_rate)
     
     # Calculate the weighted average life (WAL) of the cash flows using the settle date
     wal = calculate_weighted_average_life(cash_flows, settle_date)
