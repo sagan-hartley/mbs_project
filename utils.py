@@ -25,6 +25,19 @@ def days360(d1, d2):
     # Calculate the number of days using 360-day year convention
     return (d2.year - d1.year) * 360 + (d2.month - d1.month) * 30 + (d2_day - d1_day)
 
+def years_thirty360(d1, d2):
+    """
+    Calculate the number of years (as float) between two dates using the 30-360-day year convention.
+
+    Parameters:
+    d1 (datetime): The first date.
+    d2 (datetime): The second date, which should be later than or equal to the first date.
+    
+    Returns:
+    float: The number of years between the two dates, using the 30/360 day count convention.
+    """
+    return days360(d1, d2) / 360
+
 def create_regular_dates_grid(start_date, end_date, frequency='m'):
     """
     Create a finer grid of dates (e.g., daily, weekly, monthly) from the market close date 

@@ -173,7 +173,6 @@ def plot_forward_curve_zcb_prices(forward_curves, curve_names, title='Forward Cu
     plt.grid()
     plt.show()
 
-
 def plot_hull_white(hull_white, forward_curve, title='Hull-White Average Path vs Forward Curve'):
     """
     Plots the Hull-White simulation results and forward curve.
@@ -408,7 +407,7 @@ def run_exercises(coarse_curve, fine_curve):
     # Define a list of settle dates to calculate the value of the dummy cash flows for
     settle_dates = pd.to_datetime(["10/01/2024", "10/15/2024", "11/10/2024", "11/15/2024"])
 
-    print("\nSettle Value of Exercise Fake Cash Flows")
+    print("\nSettle Value of Exercise Dummy Cash Flows")
     for date in settle_dates:
         print(f"Settle Date: {date}, Value: {value_cash_flows(discounter, exercise_flows, date)}")
 
@@ -468,7 +467,7 @@ def run_exercises(coarse_curve, fine_curve):
 
     # Also define a function that takes in a shock, a StepDiscounter,
     # a CashFlowData instance, a gross annual coupon, a net annual coupon, a spread, an oas, and a settle date
-    def value_shock(shock, discounter, scheduled_balances, gross_cpn, net_cpn, spread, oas, settle_date):
+    def value_shock(shock, discounter, scheduled_flows, gross_cpn, net_cpn, spread, oas, settle_date):
         """
         Calculate the values of cash flows under an interest rate shock.
 
@@ -482,7 +481,7 @@ def run_exercises(coarse_curve, fine_curve):
             An interest rate shock to apply.
         discounter : StepDiscounter
             An instance of `StepDiscounter` that provides discount rates and dates.
-        scheduled_balances : CashFlowData
+        scheduled_flows : CashFlowData
             An instance containing scheduled balance data, including payment and accrual dates.
         gross_cpn : float
             The gross annual coupon rate (as a decimal, e.g., 0.05 for 5%).
@@ -493,23 +492,23 @@ def run_exercises(coarse_curve, fine_curve):
         oas : float
             The option-adjusted spread to add to the discount rates for valuation.
         settle_date : datetime
-            he date on which the valuation is performed.
+            The settle date for valuation.
 
         Returns:
         -------
-        val : float
+        value : float
             The computed value of the cash flows for the input shock.
         """
         # Calculate the primary customer coupons (PCCs) based on the shocked discount rates and spread.
         pccs = calculate_pccs(
             discounter.rates + shock,  # Apply the shock to the discount rates.
             discounter.dates,
-            scheduled_balances.accrual_dates,
+            scheduled_flows.accrual_dates,
             spread=spread
         )
         
         # Derive the single monthly mortality (SMM) rates from the PCCs and gross coupon rate.
-        smm = calculate_smms(pccs, gross_cpn, scheduled_balances.accrual_dates)[:-1]
+        smm = calculate_smms(pccs, gross_cpn, scheduled_flows.accrual_dates)[:-1]
         
         # Create a shocked discounter by adding the OAS and shock to the discount rates.
         shocked_discounter = StepDiscounter(
@@ -519,7 +518,7 @@ def run_exercises(coarse_curve, fine_curve):
         
         # Compute the actual balances based on the shocked SMMs and net coupon rate.
         actual_balances = calculate_actual_balances(
-            scheduled_balances, 
+            scheduled_flows, 
             smm, 
             net_cpn
         )

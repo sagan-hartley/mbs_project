@@ -2,13 +2,11 @@ import pandas as pd
 import numpy as np
 from scipy.optimize import minimize
 from utils import (
-    days360,
+    years_thirty360,
     years_from_reference,
     integral_knots,
     zcbs_from_deltas
 )
-
-CASH_DAYS_IN_YEAR = 360
 
 class CashFlowData:
     """
@@ -300,11 +298,11 @@ def price_cash_flows(present_value, balance_at_settle, settle_date, last_coupon_
         # Normalize the present value by the balance at settlement
         dirty_price = present_value * par_balance / balance_at_settle
 
-    # Calculate the days between the last coupon and settlement dates
-    days_between = days360(pd.to_datetime(last_coupon_date), pd.to_datetime(settle_date))
+    # Calculate the fraction of year between the last coupon and settlement dates
+    years_between = years_thirty360(pd.to_datetime(last_coupon_date), pd.to_datetime(settle_date))
     
     # Compute accrued interest
-    accrued_interest = (annual_interest_rate / CASH_DAYS_IN_YEAR) * days_between * par_balance
+    accrued_interest = annual_interest_rate * years_between * par_balance
     
     # Derive clean price by subtracting accrued interest from the dirty price
     clean_price = dirty_price - accrued_interest

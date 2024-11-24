@@ -4,7 +4,6 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 from financial_calculations.cash_flows import (
-    CASH_DAYS_IN_YEAR,
     CashFlowData,
     StepDiscounter,
     filter_cash_flows,
@@ -305,7 +304,7 @@ class TestPriceCashFlows(unittest.TestCase):
         )
         
         days_between = days360(self.last_accrual_date, self.settle_date)
-        expected_accrued_interest = (self.annual_interest_rate / CASH_DAYS_IN_YEAR) * days_between * self.par_balance
+        expected_accrued_interest = (self.annual_interest_rate / 360) * days_between * self.par_balance
         expected_clean_price = self.expected_dirty_price - expected_accrued_interest
         
         self.assertAlmostEqual(clean_price, expected_clean_price, places=2)
@@ -345,7 +344,7 @@ class TestPriceCashFlows(unittest.TestCase):
         
         expected_dirty_price = self.present_value * 200 / self.balance_at_settle
         days_between = days360(self.last_accrual_date, self.settle_date)
-        expected_accrued_interest = (self.annual_interest_rate / CASH_DAYS_IN_YEAR) * days_between * 200
+        expected_accrued_interest = (self.annual_interest_rate / 360) * days_between * 200
         expected_clean_price = expected_dirty_price - expected_accrued_interest
         
         self.assertAlmostEqual(clean_price, expected_clean_price, places=2)
