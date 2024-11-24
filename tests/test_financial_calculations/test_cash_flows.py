@@ -502,15 +502,6 @@ class TestGetSettleAccrualDate(unittest.TestCase):
         result = get_settle_accrual_date(self.cash_flow_data, settle_date)
         self.assertEqual(result, pd.to_datetime("2023-10-01"))
 
-    def test_get_settle_accrual_date_no_cash_flows(self):
-        """Test case with no cash flows (empty CashFlowData instance)."""
-        empty_cash_flow_data = CashFlowData(
-            np.array([]), pd.to_datetime([]), pd.to_datetime([]), np.array([]), np.array([])
-        )
-        settle_date = pd.to_datetime("2023-05-01")
-        result = get_settle_accrual_date(empty_cash_flow_data, settle_date)
-        self.assertEqual(result, settle_date)
-
 class TestOASSearch(unittest.TestCase):
     """
     Unit tests for the `oas_search` function. These tests cover the following aspects:

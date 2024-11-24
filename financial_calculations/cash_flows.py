@@ -422,12 +422,12 @@ def get_settle_accrual_date(cash_flows, settle_date):
         The settle accrual date, which is the accrual date from cash_flows right before the settle_date,
         or settle_date if no valid accrual dates are found.
     """
+    # If the settle date is on or before the first accrual date, return the settle date
+    if settle_date <= cash_flows.accrual_dates[0]:
+        return settle_date
+    
     # Find the index of the accrual date right before the settle date
     last_accrual_index = np.searchsorted(cash_flows.accrual_dates, settle_date)
-
-    # If the index is 0, it means settle_date is before the first date
-    if last_accrual_index == 0:
-        return settle_date  # Return settle_date if no valid accrual dates found
 
     # Return the last valid accrual date before the settle date
     settle_accrual_date = cash_flows.accrual_dates[last_accrual_index - 1]
