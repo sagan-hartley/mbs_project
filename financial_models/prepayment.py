@@ -147,6 +147,13 @@ def calculate_smms(pccs, pcc_dates, smm_dates, coupon, lag_months=0):
     if not isinstance(smm_dates, pd.DatetimeIndex):
         smm_dates = pd.to_datetime(smm_dates)
 
+    # Ensure `pcc_dates` is a Pandas DatetimeIndex
+    if not isinstance(pcc_dates, pd.DatetimeIndex):
+        pcc_dates = pd.to_datetime(pcc_dates)
+
+    # Store a copy of pccs so it can be reset after it is manipulated to calculate the smms
+    original_pccs = pccs
+
     # Convert `pccs` to a numpy array and handle dimensionality
     pccs = np.asarray(pccs)
     is_1d = pccs.ndim == 1
@@ -177,5 +184,8 @@ def calculate_smms(pccs, pcc_dates, smm_dates, coupon, lag_months=0):
 
     # Final SMM calculation
     smms = refi_factors + demo_factors
+
+    # Reset pccs in case it is used elsewhere
+    pccs = original_pccs
 
     return smms.flatten() if is_1d else smms # Return smms to original shape if input was 1D else return smms
