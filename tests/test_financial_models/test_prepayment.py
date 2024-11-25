@@ -154,6 +154,18 @@ class TestPrepaymentModel(unittest.TestCase):
         with self.assertRaises(IndexError):
             calculate_smms(pccs, coupon, smm_dates, lag_months=3)
 
+    def test_calculate_smms_1d_with_lag(self):
+        """Test SMM calculation with 1D PCCs and a non-zero lag."""
+        one_d_pccs = np.array([0.06, 0.07, 0.08])
+        coupon = 0.08
+        smm_dates = pd.to_datetime(['2024-01-01', '2024-02-01', '2024-03-01'])
+        
+        # Expected SMM with a 1-month lag
+        expected_smms = np.array([0.0425, 0.042733, 0.02885])
+
+        smms = calculate_smms(one_d_pccs, coupon, smm_dates, lag_months=1)
+        np.testing.assert_array_almost_equal(smms, expected_smms)
+
     def test_refi_strength_edge_case(self):
         """Test edge cases for the refinancing strength calculation."""
         spreads = np.array([0, 0.015, 0.03])

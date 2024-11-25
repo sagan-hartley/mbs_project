@@ -132,84 +132,65 @@ def demo(smm_dates, base_smm=0.005):
 
     return demo_factors
 
+def lag_2darray(array, lag):
+    if lag == 0:
+        return array
+    prepend = np.repeat(array[:, [0]], lag, axis=1)
+    return np.concatenate((prepend, array[:, :-lag]), axis=1)
+
 def calculate_smms(pccs, coupon, smm_dates, lag_months=0):
     """
-    Calculate the Single Monthly Mortality (SMM) rates based on the Primary Current Coupon (PCC) values,
-    the MBS coupon, and demographic factors over time.
-
-    The SMM calculation considers refinancing incentives influenced by the spread between the PCC and the
-    coupon rate, as well as demographic factors that vary with time.
+    Calculate Single Monthly Mortality (SMM) rates based on refinancing incentives and demographic factors.
 
     Parameters
     ----------
-    pccs : ndarray or list
-        A 2D array or list of Primary Current Coupon (PCC) values, where rows represent different scenarios 
-        and columns represent months. Each element corresponds to a PCC value for a specific month in a given scenario.
+    pccs : np.ndarray or list
+        Primary Current Coupon values (1D or 2D array).
     coupon : float
-        The coupon rate of the MBS, representing the fixed interest rate paid to bondholders.
-    smm_dates : pd.DatetimeIndex, ndarray, or list
-        A Pandas DatetimeIndex or array-like of dates representing the loan's term. This must be a regular monthly grid.
-        These dates are used to calculate demographic factors (e.g., age and seasonal adjustments).
+        The coupon rate of the MBS.
+    smm_dates : pd.DatetimeIndex, list, or np.ndarray
+        Dates for the loan term as a regular monthly grid.
     lag_months : int, optional
-        The number of months by which to lag the PCC values. The lag introduces delay into the SMM calculation,
-        which can be useful to model delayed refinancing effects. Default is 0 (no lag).
+        Number of months to lag PCC values. Default is 0 (no lag).
 
     Returns
     -------
-    ndarray
-        A 2D array of SMM values for each scenario and month. The shape of the array corresponds to the input `pccs` 
-        array, with rows representing scenarios and columns representing months.
-    
-    Raises
-    ------
-    ValueError
-        If the dimensions of `pccs` do not match the length of `smm_dates`.
-        If 'pccs' is not a 1d or 2d array.
-    IndexError
-        If lag_months causes smms_dates[0] + lag_months to be out of bounds of smm_dates.
+    np.ndarray
+        A 2D array of SMM rates.
     """
-    
-    # Ensure `smm_dates` is a Pandas DatetimeIndex for compatibility with date calculations
+    # Ensure `smm_dates` is a Pandas DatetimeIndex
     if not isinstance(smm_dates, pd.DatetimeIndex):
         smm_dates = pd.to_datetime(smm_dates)
-    
-    # Convert `pccs` to a numpy array if it is not already one
+
+    # Convert `pccs` to a numpy array and handle dimensionality
     pccs = np.asarray(pccs)
-    
-    # Validate that the number of columns in `pccs` matches the length of `smm_dates`
-    if pccs.ndim == 1:
-        # If pccs is a 1D array, check if its length matches the length of smm_dates
-        if len(smm_dates) != len(pccs):
-            raise ValueError("The length of smm_dates must match the length of pccs.")
-    elif pccs.ndim == 2:
-        # If pccs is a 2D array, check if the number of columns matches the length of smm_dates
-        if len(smm_dates) != pccs.shape[1]:
-            raise ValueError("The length of smm_dates must match the number of months in pccs.")
-    else:
+    is_1d = pccs.ndim == 1
+
+    if is_1d == 1:
+        pccs = pccs.reshape(1, -1)  # Temporarily make it 2D for processing
+    elif pccs.ndim != 2:
         raise ValueError("pccs must be a 1D or 2D array.")
     
-    # Apply the lag to PCCs if `lag_months` is specified
-    if lag_months != 0:
-        # Check that `lag_months + 1` does not go out of bounds
-        if lag_months + 1 > pccs.shape[1]:
-            raise IndexError("Lag index exceeds the number of available months in PCCs.")
-        
-        # Initialize the lagged PCC array
-        # Note that lag_months corresponds to the correct pccs index since smm_dates is a regular monthly grid
-        prepend = np.repeat(pccs[:, [0]], lag_months, axis=1) # Repeat the first column for lag_months
-        truncated = pccs[:, :-lag_months] # Shift the remaining PCCs by lag_months
-        lagged_pccs = np.concatenate((prepend, truncated), axis=1)
-    else:
-        lagged_pccs = pccs
-    
-    # Calculate the refinancing incentive based on the spread between the coupon and lagged PCCs
-    spread = coupon - lagged_pccs
-    refi_factors = refi_strength(spread)  # Example function that models refinancing incentives
-    
-    # Calculate the demographic factors based on `smm_dates`
-    demo_factors = demo(smm_dates)  # Example function that applies demographic factors based on time
-    
-    # Final SMM calculation as the sum of refinancing and demographic factors
+    # Validate dimensions
+    if pccs.shape[1] != len(smm_dates):
+        raise ValueError("The number of columns in `pccs` must match the length of `smm_dates`.")
+
+    # Apply lag
+    if lag_months > 0:
+        if lag_months >= pccs.shape[1]:
+            raise IndexError("Lag exceeds the number of available months in `pccs`.")
+        pccs = lag_2darray(pccs, lag_months)
+
+    # Calculate refinancing and demographic factors
+    spread = coupon - pccs
+    refi_factors = refi_strength(spread)  # Refinancing incentives
+    demo_factors = demo(smm_dates)  # Demographic factors
+
+    # Final SMM calculation
     smms = refi_factors + demo_factors
+
+    # Return to original shape if input was 1D
+    if is_1d:
+        return smms.flatten()
 
     return smms
