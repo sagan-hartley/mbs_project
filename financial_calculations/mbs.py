@@ -8,8 +8,7 @@ from utils import (
 from .cash_flows import (
     CashFlowData,
     StepDiscounter,
-    evaluate_cash_flows,
-    oas_search
+    evaluate_cash_flows
 )
 from financial_models.prepayment import (
     calculate_pccs,
@@ -116,6 +115,7 @@ def calculate_scheduled_balances(principal, origination_date, num_months, annual
 
     # Adjust last payment to pay off any remaining balance
     principal_paydowns[-1] = balances[-2]
+    balances[-1] = 0 # The last balance is now zero
 
     # Include a zero at the start of both interest and principal paydowns arrays
     interest_paid = np.insert(interest_paid, 0, 0)
@@ -130,8 +130,9 @@ def calculate_actual_balances(cash_flow_data, smms, net_annual_interest_rate):
     Parameters
     ----------
     cash_flow_data : CashFlowData
-        An instance of `CashFlowData` that includes:
-        - scheduled_balances (array-like)
+        An instance of `CashFlowData` that represents scheduled balances.
+        it includes:
+        - balances (array-like)
         - accrual_dates (array-like)
         - payment_dates (array-like)
         - scheduled_principal_paydowns (array-like)
@@ -231,6 +232,9 @@ def pathwise_evaluate_mbs(mbs_list, short_rates, short_rate_dates, spread = 0.04
     
     results = []  # To store results for each MBS
 
+    # Initialize a StepDiscounter instance with a placeholder rate, to be updated within each path iteration
+    discounter = StepDiscounter(short_rate_dates, short_rates[0, :] + oas)
+
     # Loop through each MBS in the provided list
     for mbs in mbs_list:
         # Initialize lists to hold pathwise results for the current MBS
@@ -245,9 +249,6 @@ def pathwise_evaluate_mbs(mbs_list, short_rates, short_rate_dates, spread = 0.04
         # Calculate the Primary Current Coupons (PCCs) and SMMs based on the original short rates
         pccs = calculate_pccs(short_rates, short_rate_dates, scheduled_balances.accrual_dates[:-1], spread=spread)
         smms = calculate_smms(pccs, mbs.gross_annual_coupon, scheduled_balances.accrual_dates[:-1])
-
-        # Initialize a StepDiscounter instance with a placeholder rate, to be updated within each path iteration
-        discounter = StepDiscounter(short_rate_dates, short_rates[0, :] + oas)
 
         # Loop through each short rate path and corresponding SMM path
         for index, smm_path in enumerate(smms):

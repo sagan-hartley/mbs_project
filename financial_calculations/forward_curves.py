@@ -140,19 +140,26 @@ def calibrate_fine_curve(market_close_date, cmt_data, balance=100, frequency='m'
     # Create a grid of rate dates from market close date to the latest maturity date
     rate_dates = create_regular_dates_grid(market_close_date, max_maturity_date, frequency)
 
+    # Loop through the sorted bond data (effective date, maturity years, and coupon rates) to compute and store cash flows
+    semi_bond_flows_list = []
+    for effective_date, maturity_years, coupon in sorted_cmt_data:
+        # Create bond instance and generate its cash flows
+        semi_bond = SemiBondContract(effective_date, maturity_years * 12, coupon, balance)
+        semi_bond_flows = create_semi_bond_cash_flows(semi_bond)
+        semi_bond_flows_list.append(semi_bond_flows)
+
+    # Define an instance of Stepdiscounter to use for bond pricing
+    discounter = StepDiscounter(rate_dates, np.zeros(len(rate_dates)))
+
     # Define the objective function for optimization: minimizes squared errors between bond prices and balance
     def objective(rates):
         # Initialize the squared error of the bond price
         price_error_sq = 0
 
-        # Loop through the sorted bond data (effective date, maturity years, and coupon rates)
-        for effective_date, maturity_years, coupon in sorted_cmt_data:
-            # Create bond instance and generate its cash flows
-            semi_bond = SemiBondContract(effective_date, maturity_years * 12, coupon, balance)
-            semi_bond_flows = create_semi_bond_cash_flows(semi_bond)
-
+        # Loop through the pre-computed semi bond cash flows
+        for semi_bond_flows in semi_bond_flows_list:
             # Discount the bond's cash flows using the given rates
-            discounter = StepDiscounter(rate_dates, rates)
+            discounter.set_rates(rates)
             price = value_cash_flows(discounter, semi_bond_flows, market_close_date)
 
             # Add the squared difference between calculated price and target balance
