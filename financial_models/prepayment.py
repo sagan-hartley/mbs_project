@@ -195,10 +195,10 @@ def calculate_smms(pccs, coupon, smm_dates, lag_months=0):
             raise IndexError("Lag index exceeds the number of available months in PCCs.")
         
         # Initialize the lagged PCC array
-        # Note that log_months corresponds to the correct pcc index since smm_dates is a regular monthly grid
-        lagged_pccs = np.zeros_like(pccs)
-        lagged_pccs[:, :lag_months+1] = pccs[:, [0]]  # Repeat the first column for lagged months
-        lagged_pccs[:, lag_months:] = pccs[:, :-lag_months]  # Shift the remaining PCCs by lag_months
+        # Note that lag_months corresponds to the correct pccs index since smm_dates is a regular monthly grid
+        prepend = np.repeat(pccs[:, [0]], lag_months, axis=1) # Repeat the first column for lag_months
+        truncated = pccs[:, :-lag_months] # Shift the remaining PCCs by lag_months
+        lagged_pccs = np.concatenate((prepend, truncated), axis=1)
     else:
         lagged_pccs = pccs
     

@@ -51,14 +51,14 @@ def calculate_theta(forward_curve, alpha, sigma, sim_short_rate_dates):
     if np.any(sim_short_rate_dates < market_close_date):
         raise ValueError("Each short rate date must be on or after the market close date")
 
-    # Calculate time deltas in years from the market close date to each simulation date
-    sim_short_rate_deltas = years_from_reference(market_close_date, sim_short_rate_dates)
+    # Calculate time differnce in years from the market close date to each simulation date
+    sim_short_rate_years = years_from_reference(market_close_date, sim_short_rate_dates)
 
     # Interpolate forward rates at each simulated short rate date using step interpolation
     forward_rates = step_interpolate(forward_curve.dates, forward_curve.rates, sim_short_rate_dates)
 
     # Compute the derivative of forward rates with respect to time (df/dt) using finite differences
-    dfdt = np.gradient(forward_rates, sim_short_rate_deltas)
+    dfdt = np.gradient(forward_rates, sim_short_rate_years)
 
     # Calculate theta values based on whether alpha (mean reversion) is zero
     if alpha == 0:
@@ -66,7 +66,7 @@ def calculate_theta(forward_curve, alpha, sigma, sim_short_rate_dates):
         theta_vals = dfdt
     else:
         # General case: mean-reversion is present
-        theta_vals = dfdt + alpha * forward_rates + (sigma**2 / (2 * alpha)) * (1 - np.exp(-2 * alpha * sim_short_rate_deltas))
+        theta_vals = dfdt + alpha * forward_rates + (sigma**2 / (2 * alpha)) * (1 - np.exp(-2 * alpha * sim_short_rate_years))
 
     # Return the simulation dates and their corresponding theta values
     return sim_short_rate_dates, theta_vals
