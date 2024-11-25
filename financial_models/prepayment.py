@@ -1,6 +1,9 @@
 import numpy as np
 import pandas as pd
-from utils import create_regular_dates_grid
+from utils import (
+    create_regular_dates_grid,
+    lag_2darray
+)
 
 SEASONAL_FACTORS_ARRAY = np.array([
         0.75,  # January (month 1)
@@ -17,35 +20,21 @@ SEASONAL_FACTORS_ARRAY = np.array([
         0.75   # December (month 12)
     ])
 
-def calculate_pccs(short_rates, short_rate_dates, cash_flow_dates, spread=0.04):
+def calculate_pccs(short_rates, spread=0.04):
     """
     Calculate the Primary Current Coupons (PCCs) by adding a fixed spread to the short rates.
 
     Parameters:
     - short_rates (array-like): 1D or 2D array of short rates from the Hull-White model simulation.
-    - short_rate_dates (DatetimeIndex or array-like): Dates corresponding to each short rate in the simulation.
-    - cash_flow_dates (DatetimeIndex or array-like): Cash flow dates for which PCCs need to be calculated.
     - spread (float): Fixed spread to add to short rates. Default is 0.04 (4%).
 
     Returns:
-    - ndarray: PCC values. If `short_rates` was 1D, returns a 1D array; otherwise, returns a 2D array.
+    - ndarray: PCC values.
     """
-    # Convert inputs to numpy arrays or DatetimeIndex as appropriate
-    short_rates = np.asarray(short_rates)
-    short_rate_dates = pd.to_datetime(short_rate_dates) if not isinstance(short_rate_dates, pd.DatetimeIndex) else short_rate_dates
-    cash_flow_dates = pd.to_datetime(cash_flow_dates) if not isinstance(cash_flow_dates, pd.DatetimeIndex) else cash_flow_dates
+    # Convert short_rates to a numpy array and broadcast the spread addition to get the PCCs
+    pccs = np.asarray(short_rates) + spread
 
-    # Flag to remember if input was originally 1D
-    was_1d = short_rates.ndim == 1
-    if was_1d:
-        short_rates = short_rates[np.newaxis, :]  # Convert to 2D for processing
-
-    # Use searchsorted to find indices for each cash flow date
-    indexes = np.searchsorted(short_rate_dates, cash_flow_dates, side='right') - 1
-    result = short_rates[:, indexes] + spread
-
-    # If input was originally 1D, return the first row as a 1D array
-    return result[0] if was_1d else result
+    return pccs
 
 def refi_strength(spreads):
     """
@@ -132,13 +121,7 @@ def demo(smm_dates, base_smm=0.005):
 
     return demo_factors
 
-def lag_2darray(array, lag):
-    if lag == 0:
-        return array
-    prepend = np.repeat(array[:, [0]], lag, axis=1)
-    return np.concatenate((prepend, array[:, :-lag]), axis=1)
-
-def calculate_smms(pccs, coupon, smm_dates, lag_months=0):
+def calculate_smms(pccs, pcc_dates, smm_dates, coupon, lag_months=0):
     """
     Calculate Single Monthly Mortality (SMM) rates based on refinancing incentives and demographic factors.
 
@@ -146,10 +129,12 @@ def calculate_smms(pccs, coupon, smm_dates, lag_months=0):
     ----------
     pccs : np.ndarray or list
         Primary Current Coupon values (1D or 2D array).
-    coupon : float
-        The coupon rate of the MBS.
+    pcc_dates : pd.DatetimeIndex, list, or np.ndarray
+        Dates corresponding to the columns of pccs
     smm_dates : pd.DatetimeIndex, list, or np.ndarray
         Dates for the loan term as a regular monthly grid.
+    coupon : float
+        The coupon rate of the MBS.
     lag_months : int, optional
         Number of months to lag PCC values. Default is 0 (no lag).
 
@@ -172,8 +157,12 @@ def calculate_smms(pccs, coupon, smm_dates, lag_months=0):
         raise ValueError("pccs must be a 1D or 2D array.")
     
     # Validate dimensions
-    if pccs.shape[1] != len(smm_dates):
-        raise ValueError("The number of columns in `pccs` must match the length of `smm_dates`.")
+    if pccs.shape[1] != len(pcc_dates):
+        raise ValueError("The number of columns in `pccs` must match the length of `pcc_dates`.")
+    
+    # Use searchsorted to find indices for each smm date
+    indexes = np.searchsorted(pcc_dates, smm_dates, side='right') - 1
+    pccs = pccs[:, indexes]
 
     # Apply lag
     if lag_months > 0:
@@ -189,8 +178,4 @@ def calculate_smms(pccs, coupon, smm_dates, lag_months=0):
     # Final SMM calculation
     smms = refi_factors + demo_factors
 
-    # Return to original shape if input was 1D
-    if is_1d:
-        return smms.flatten()
-
-    return smms
+    return smms.flatten() if is_1d else smms # Return smms to original shape if input was 1D else return smms

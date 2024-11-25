@@ -369,3 +369,52 @@ def calculate_antithetic_variance(path_results):
         raise ValueError("path_results must be either a 1D or 2D array.")
 
     return antithetic_variance
+
+import numpy as np
+
+def lag_2darray(array, lag_index):
+    """
+    Lag a 2D array by a specified number of columns, filling the leading values 
+    with the first column's value (prepending).
+
+    Parameters
+    ----------
+    array : array-like
+        A 2D array to be lagged. Can be any array-like structure (e.g., list, tuple).
+    lag_index : int
+        The number of columns to lag. Must be a non-negative integer and less 
+        than the number of columns in the array.
+
+    Returns
+    -------
+    np.ndarray
+        A new 2D array where each column is shifted `lag_index` positions to 
+        the right. The leading `lag_index` columns are filled with the first 
+        column's value.
+
+    Raises
+    ------
+    ValueError
+        If `lag_index` is negative or exceeds the number of columns in `array`.
+    """
+    # Convert input to a NumPy array
+    array = np.asarray(array)
+    
+    # Ensure the array is 2D
+    if array.ndim != 2:
+        raise ValueError("Input must be a 2D array-like structure.")
+
+    # Validate lag_index
+    if lag_index < 0:
+        raise ValueError("lag_index must be a non-negative integer.")
+    if lag_index >= array.shape[1]:
+        raise ValueError("lag_index must be less than the number of columns in the array.")
+
+    if lag_index == 0:
+        return array
+
+    # Prepend columns with the first column repeated
+    prepend = np.repeat(array[:, [0]], lag_index, axis=1)
+    
+    # Concatenate the prepended columns with the lagged main array
+    return np.concatenate((prepend, array[:, :-lag_index]), axis=1)

@@ -457,7 +457,7 @@ def run_exercises(coarse_curve, fine_curve):
     print("\nAttributes of Exercise MBS Cash Flows With OAS and Shocks")
     for shock in shocks:
         print(f"\nCurrent Shock: {shock}")
-        smm = calculate_smms(calculate_pccs(rate_grid + shock, date_grid, sched_balances.accrual_dates, spread = 0.033), 0.07, sched_balances.accrual_dates)[:-1]
+        smm = calculate_smms(calculate_pccs(rate_grid + shock, spread = 0.033), date_grid, sched_balances.accrual_dates[:-1], 0.07)
         shocked_discounter = StepDiscounter(discounter.dates, discounter.rates + 0.03 + shock)
         for date in settle_dates:
             print_mbs_attributes(calculate_actual_balances(sched_balances, smm, 0.0675), 0.0675, shocked_discounter, date, find_oas=False)
@@ -501,14 +501,12 @@ def run_exercises(coarse_curve, fine_curve):
         """
         # Calculate the primary customer coupons (PCCs) based on the shocked discount rates and spread.
         pccs = calculate_pccs(
-            discounter.rates + shock,  # Apply the shock to the discount rates.
-            discounter.dates,
-            scheduled_flows.accrual_dates,
+            discounter.rates + shock,
             spread=spread
         )
         
         # Derive the single monthly mortality (SMM) rates from the PCCs and gross coupon rate.
-        smm = calculate_smms(pccs, gross_cpn, scheduled_flows.accrual_dates)[:-1]
+        smm = calculate_smms(pccs, discounter.dates, scheduled_flows.accrual_dates[:-1], gross_cpn)
         
         # Create a shocked discounter by adding the OAS and shock to the discount rates.
         shocked_discounter = StepDiscounter(

@@ -235,6 +235,9 @@ def pathwise_evaluate_mbs(mbs_list, short_rates, short_rate_dates, spread = 0.04
     # Initialize a StepDiscounter instance with a placeholder rate, to be updated within each path iteration
     discounter = StepDiscounter(short_rate_dates, short_rates[0, :] + oas)
 
+    # Calculate the Primary Current Coupons (PCCs) based on the short rates
+    pccs = calculate_pccs(short_rates, spread=spread)
+
     # Loop through each MBS in the provided list
     for mbs in mbs_list:
         # Initialize lists to hold pathwise results for the current MBS
@@ -246,9 +249,8 @@ def pathwise_evaluate_mbs(mbs_list, short_rates, short_rate_dates, spread = 0.04
             payment_delay=mbs.payment_delay
         )
 
-        # Calculate the Primary Current Coupons (PCCs) and SMMs based on the original short rates
-        pccs = calculate_pccs(short_rates, short_rate_dates, scheduled_balances.accrual_dates[:-1], spread=spread)
-        smms = calculate_smms(pccs, mbs.gross_annual_coupon, scheduled_balances.accrual_dates[:-1])
+        # Calculate the Single Month Mortality (SMM) rates from the PCCs and input data
+        smms = calculate_smms(pccs, short_rate_dates, scheduled_balances.accrual_dates[:-1], mbs.gross_annual_coupon)
 
         # Loop through each short rate path and corresponding SMM path
         for index, smm_path in enumerate(smms):

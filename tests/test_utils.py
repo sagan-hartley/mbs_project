@@ -13,7 +13,8 @@ from utils import (
     integral_knots,
     zcbs_from_deltas,
     zcbs_from_dates,
-    calculate_antithetic_variance
+    calculate_antithetic_variance,
+    lag_2darray
 )
 
 class TestDays360(unittest.TestCase):
@@ -587,6 +588,60 @@ class TestAntitheticVariance(unittest.TestCase):
         
         # Check if result variance matches expected variance
         np.testing.assert_almost_equal(result_variance, expected_variance, decimal=5)
+
+class TestLag2DArray(unittest.TestCase):
+    def test_lag_with_valid_array_and_lag_index(self):
+        """Test the function with a valid 2D array and lag_index."""
+        array = np.array([[1, 2, 3], [4, 5, 6]])
+        expected_output = np.array([[1, 1, 2], [4, 4, 5]])
+        np.testing.assert_array_equal(lag_2darray(array, 1), expected_output)
+        
+        expected_output = np.array([[1, 1, 1], [4, 4, 4]])
+        np.testing.assert_array_equal(lag_2darray(array, 2), expected_output)
+    
+    def test_lag_with_lag_index_zero(self):
+        """Test the function with lag_index set to 0 (no lagging)."""
+        array = np.array([[1, 2, 3], [4, 5, 6]])
+        np.testing.assert_array_equal(lag_2darray(array, 0), array)
+
+    def test_lag_with_lag_index_equal_columns(self):
+        """Test that lag_index equal to the number of columns raises an error."""
+        array = np.array([[1, 2, 3], [4, 5, 6]])
+        with self.assertRaises(ValueError):
+            lag_2darray(array, 3)
+
+    def test_lag_with_negative_lag_index(self):
+        """Test that a negative lag_index raises an error."""
+        array = np.array([[1, 2, 3], [4, 5, 6]])
+        with self.assertRaises(ValueError):
+            lag_2darray(array, -1)
+
+    def test_lag_with_1d_array(self):
+        """Test that a 1D array raises an error."""
+        array = np.array([1, 2, 3])
+        with self.assertRaises(ValueError):
+            lag_2darray(array, 1)
+
+    def test_lag_with_non_array_input(self):
+        """Test the function with non-NumPy input (e.g., lists)."""
+        array = [[1, 2, 3], [4, 5, 6]]  # Python list
+        expected_output = np.array([[1, 1, 2], [4, 4, 5]])
+        np.testing.assert_array_equal(lag_2darray(array, 1), expected_output)
+
+    def test_lag_with_empty_array(self):
+        """Test the function with an empty array."""
+        array = np.empty((0, 0))
+        with self.assertRaises(ValueError):
+            lag_2darray(array, 1)
+
+    def test_lag_with_single_column_array(self):
+        """Test the function with a single-column array."""
+        array = np.array([[1], [2], [3]])
+        expected_output = np.array([[1], [2], [3]])
+        np.testing.assert_array_equal(lag_2darray(array, 0), expected_output)
+        
+        with self.assertRaises(ValueError):
+            lag_2darray(array, 1)
 
 if __name__ == "__main__":
     unittest.main()
