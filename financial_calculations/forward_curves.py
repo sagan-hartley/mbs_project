@@ -60,11 +60,16 @@ def bootstrap_forward_curve(market_close_date, cmt_data, balance=100, initial_gu
         semi_bond = SemiBondContract(effective_date, maturity_years * 12, coupon, balance)
         semi_bond_flows = create_semi_bond_cash_flows(semi_bond)
 
+        # Create an instance of StepDiscounter with an additional date and rate
+        # to be modified in the objective function
+        temp_rate_vals = np.append(rate_vals, initial_guess)
+        discounter = StepDiscounter(rate_dates, temp_rate_vals)
+
         # Define the objective function for minimization
-        def objective(rate: float):
-            # Temporarily append the rate to calculate discount factors
-            temp_rate_vals = np.append(rate_vals, rate)
-            discounter = StepDiscounter(rate_dates, temp_rate_vals)
+        def objective(rate):
+            # Set the last temp rate val to the current rate
+            temp_rate_vals[-1] = rate[0]
+            discounter.set_rates(temp_rate_vals)
             value = value_cash_flows(discounter, semi_bond_flows, market_close_date)
             return (value - balance) ** 2
 
