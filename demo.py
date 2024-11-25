@@ -36,7 +36,7 @@ from financial_calculations.cash_flows import (
     value_cash_flows,
     price_cash_flows,
     get_balance_at_settle,
-    get_last_accrual_date,
+    get_settle_accrual_date,
     calculate_weighted_average_life,
     oas_search,
     calculate_dv01,
@@ -416,8 +416,8 @@ def run_exercises(coarse_curve, fine_curve):
     def print_mbs_attributes(mbs_flows, net_cpn, step_discounter, settle_date, find_oas = True):
         wal = calculate_weighted_average_life(mbs_flows, settle_date)
         val = value_cash_flows(step_discounter, mbs_flows, settle_date)
-        settle_bal = get_balance_at_settle(mbs_flows, filter_cash_flows(mbs_flows, settle_date))
-        price = price_cash_flows(val, settle_bal, settle_date, get_last_accrual_date(mbs_flows, settle_date), net_cpn)
+        settle_bal = get_balance_at_settle(mbs_flows, settle_date)
+        price = price_cash_flows(val, settle_bal, settle_date, get_settle_accrual_date(mbs_flows, settle_date), net_cpn)
         if find_oas:
             oas = oas_search(mbs_flows, step_discounter, settle_date)
             print(f"Settle Date: {date}, Settle Balance: {settle_bal}, "

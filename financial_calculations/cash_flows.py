@@ -193,6 +193,37 @@ class StepDiscounter:
         self.rates = new_rates
         _, self.integral_vals = integral_knots(self.dates, self.rates)
 
+def get_settle_accrual_index(cash_flows, settle_date):
+    """
+    Determines the index of the accrual period for a given settle date in a cash flow schedule.
+
+    Parameters:
+    ----------
+    cash_flows : CashFlowData
+        An instance of CashFlowData
+
+    settle_date : str, datetime, or Timestamp
+        The settlement date for which the accrual index is calculated. This can be provided 
+        as a string in 'YYYY-MM-DD' format, a `datetime` object, or a Pandas `Timestamp`.
+
+    Returns:
+    -------
+    int
+        The index of the accrual date that occurs on or immediately before the `settle_date`. 
+        If the settle date is on or before the first accrual date, the function returns `0`.
+    """
+    # Convert the settle date to a Pandas Timestamp if it is not already
+    settle_date = pd.to_datetime(settle_date)
+
+    # If the settle date is on or before the first accrual date, return the settle date
+    if settle_date <= cash_flows.accrual_dates[0]:
+        return 0
+    
+    # Find the index of the accrual date right before (or on) the settle date
+    settle_accrual_index = np.searchsorted(cash_flows.accrual_dates, settle_date, 'right') - 1
+
+    return settle_accrual_index
+
 def filter_cash_flows(cash_flows, settle_date):
     """
     Filters cash flows occurring after a specified settlement date.
@@ -309,7 +340,7 @@ def price_cash_flows(present_value, balance_at_settle, settle_date, last_coupon_
 
     return clean_price
 
-def get_balance_at_settle(cash_flows, filtered_cfs):
+def get_balance_at_settle(cash_flows, settle_date):
     """
     Calculate the balance at settlement based on cash flows and filtered cash flows.
 
@@ -338,17 +369,11 @@ def get_balance_at_settle(cash_flows, filtered_cfs):
     ValueError
         If the first payment date in filtered cash flows is not found in cash flows.
     """
-    # Check if the first balance in filtered cash flows is the same as the first in cash flows
-    if filtered_cfs.balances[0] == cash_flows.balances[0]:
-        balance_at_settle = cash_flows.balances[0]  # Same start point
-    else:
-        # Find the index of the first payment date in filtered_cfs
-        index = np.where(cash_flows.payment_dates == filtered_cfs.payment_dates[0])[0]
-        if index.size == 0:
-            raise ValueError("The first payment date in filtered cash flows is not found in cash flows.")
-        
-        # Use the index to get the balance just before this payment date
-        balance_at_settle = cash_flows.balances[index[0] - 1]
+    # Get the index associated with the settle date
+    settle_index = get_settle_accrual_index(cash_flows, settle_date)
+
+    # Extract the balance at settle from the cash flows using the settle index
+    balance_at_settle = cash_flows.balances[settle_index]
 
     return balance_at_settle
 
@@ -389,7 +414,7 @@ def calculate_weighted_average_life(cash_flows, settle_date):
     filtered_balances = filtered_cfs.balances
     
     # Determine the initial paydown by the difference between the balance at settle and the first value in filtered_cfs
-    initial_paydown = get_balance_at_settle(cash_flows, filtered_cfs) - filtered_cfs.balances[0]
+    initial_paydown = get_balance_at_settle(cash_flows, settle_date) - filtered_cfs.balances[0]
     
     # Create paydown array by appending the initial paydown and the negative differences in balances
     filtered_paydowns = np.append([initial_paydown], -np.diff(filtered_balances))
@@ -427,10 +452,10 @@ def get_settle_accrual_date(cash_flows, settle_date):
         return settle_date
     
     # Find the index of the accrual date right before the settle date
-    last_accrual_index = np.searchsorted(cash_flows.accrual_dates, settle_date)
+    settle_accrual_index = get_settle_accrual_index(cash_flows, settle_date)
 
     # Return the last valid accrual date before the settle date
-    settle_accrual_date = cash_flows.accrual_dates[last_accrual_index - 1]
+    settle_accrual_date = cash_flows.accrual_dates[settle_accrual_index]
 
     return settle_accrual_date
 
@@ -467,12 +492,9 @@ def evaluate_cash_flows(cash_flows, discounter, settle_date, net_annual_interest
     """
     # Calculate the present value of the cash flows by using the provided discounter function
     value = value_cash_flows(discounter, cash_flows, settle_date)
-
-    # Filter the cash flows based on the settle date
-    filtered_cfs = filter_cash_flows(cash_flows, settle_date)
     
-    # Determine the balance at settle based on the filtered cash flows and calculate the price
-    balance_at_settle = get_balance_at_settle(cash_flows, filtered_cfs)
+    # Determine the balance at settle based on the cash flows and settle date
+    balance_at_settle = get_balance_at_settle(cash_flows, settle_date)
     
     # Determine the settle accrual date based on the cash flows and settle date
     settle_accrual_date = get_settle_accrual_date(cash_flows, settle_date)
@@ -581,7 +603,7 @@ def calculate_dv01(up_val, down_val, bump_amount):
         raise ZeroDivisionError("bump_amount cannot be zero.")
 
     # Calculate the DV01   
-    dv01 = (np.mean(up_val) - np.mean(down_val)) / (2*bump_amount)
+    dv01 = (up_val - down_val) / (2*bump_amount)
 
     return dv01
 

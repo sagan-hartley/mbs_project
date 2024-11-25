@@ -6,6 +6,7 @@ import pandas as pd
 from financial_calculations.cash_flows import (
     CashFlowData,
     StepDiscounter,
+    get_settle_accrual_index,
     filter_cash_flows,
     value_cash_flows,
     price_cash_flows,
@@ -165,6 +166,75 @@ class TestStepDiscounter(unittest.TestCase):
         
         # Compare new integral values with expected integral values
         np.testing.assert_array_almost_equal(discounter.integral_vals, expected_integral_vals)
+
+class TestGetSettleAccrualIndex(unittest.TestCase):
+    def setUp(self):
+        """
+        Create a sample CashFlowData instance for use in the test cases.
+        """
+        self.cash_flows = CashFlowData(
+            balances=[1000, 800, 600],
+            accrual_dates=pd.to_datetime(['2024-01-01', '2024-07-01', '2025-01-01']),
+            payment_dates=pd.to_datetime(['2024-02-01', '2024-08-01', '2025-02-01']),
+            principal_payments=[200, 200, 200],
+            interest_payments=[30, 24, 18]
+        )
+
+    def test_settle_date_before_first_accrual(self):
+        """
+        Test when the settle date is before the first accrual date.
+        """
+        settle_date = '2023-12-31'
+        result = get_settle_accrual_index(self.cash_flows, settle_date)
+        self.assertEqual(result, 0)
+
+    def test_settle_date_on_first_accrual(self):
+        """
+        Test when the settle date is exactly on the first accrual date.
+        """
+        settle_date = '2024-01-01'
+        result = get_settle_accrual_index(self.cash_flows, settle_date)
+        self.assertEqual(result, 0)
+
+    def test_settle_date_between_first_and_second_accrual(self):
+        """
+        Test when the settle date is between the first and second accrual dates.
+        """
+        settle_date = '2024-03-01'
+        result = get_settle_accrual_index(self.cash_flows, settle_date)
+        self.assertEqual(result, 0)
+
+    def test_settle_date_on_second_accrual(self):
+        """
+        Test when the settle date is exactly on the second accrual date.
+        """
+        settle_date = '2024-07-01'
+        result = get_settle_accrual_index(self.cash_flows, settle_date)
+        self.assertEqual(result, 1)
+
+    def test_settle_date_between_second_and_third_accrual(self):
+        """
+        Test when the settle date is between the second and third accrual dates.
+        """
+        settle_date = '2024-09-15'
+        result = get_settle_accrual_index(self.cash_flows, settle_date)
+        self.assertEqual(result, 1)
+
+    def test_settle_date_on_last_accrual(self):
+        """
+        Test when the settle date is exactly on the last accrual date.
+        """
+        settle_date = '2025-01-01'
+        result = get_settle_accrual_index(self.cash_flows, settle_date)
+        self.assertEqual(result, 2)
+
+    def test_settle_date_after_last_accrual(self):
+        """
+        Test when the settle date is after the last accrual date.
+        """
+        settle_date = '2025-02-01'
+        result = get_settle_accrual_index(self.cash_flows, settle_date)
+        self.assertEqual(result, 2)
 
 class TestFilterCashFlows(unittest.TestCase):
     """Test cases for the filter_cash_flows function."""
@@ -381,25 +451,13 @@ class TestGetBalanceAtSettle(unittest.TestCase):
 
     def test_no_filtering(self):
         """Test balance at settle when no filtering has occurred."""
-        result = get_balance_at_settle(self.cash_flows, self.filtered_cfs_no_filter)
+        result = get_balance_at_settle(self.cash_flows, pd.to_datetime('2024-01-01'))
         self.assertEqual(result, 1000.0)
 
     def test_with_filtering(self):
         """Test balance at settle when filtering has occurred."""
-        result = get_balance_at_settle(self.cash_flows, self.filtered_cfs_filtered)
-        self.assertEqual(result, 1000.0)
-
-    def test_first_payment_date_not_found(self):
-        """Test ValueError is raised when first payment date in filtered_cfs is not found."""
-        filtered_cfs_invalid = CashFlowData(
-            balances=np.array([950.0, 900.0]),
-            accrual_dates=np.array(['2024-02-15', '2024-03-01']),
-            payment_dates=np.array(['2024-02-15', '2024-03-01']),
-            principal_payments=np.array([50.0, 50]),
-            interest_payments=np.array([0.0, 0.0])
-        )
-        with self.assertRaises(ValueError):
-            get_balance_at_settle(self.cash_flows, filtered_cfs_invalid)
+        result = get_balance_at_settle(self.cash_flows, pd.to_datetime('2024-02-01'))
+        self.assertEqual(result, 950.0)
 
 class TestCalculateWeightedAverageLife(unittest.TestCase):
     """Unit tests for the calculate_weighted_average_life function."""
@@ -494,7 +552,7 @@ class TestGetSettleAccrualDate(unittest.TestCase):
         """Test case where settle_date is exactly on a cash flow date."""
         settle_date = pd.to_datetime("2023-04-01")
         result = get_settle_accrual_date(self.cash_flow_data, settle_date)
-        self.assertEqual(result, pd.to_datetime("2023-01-01"))
+        self.assertEqual(result, pd.to_datetime("2023-04-01"))
 
     def test_get_settle_accrual_date_after_last_cash_flow(self):
         """Test case where settle_date is after the last cash flow date."""
