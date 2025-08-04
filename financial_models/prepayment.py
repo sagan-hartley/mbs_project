@@ -143,16 +143,12 @@ def calculate_smms(pccs, pcc_dates, smm_dates, coupon, lag_months=0):
     np.ndarray
         A 2D array of SMM rates.
     """
-    # Ensure `smm_dates` is a Pandas DatetimeIndex
-    if not isinstance(smm_dates, pd.DatetimeIndex):
-        smm_dates = pd.to_datetime(smm_dates)
-
-    # Ensure `pcc_dates` is a Pandas DatetimeIndex
-    if not isinstance(pcc_dates, pd.DatetimeIndex):
-        pcc_dates = pd.to_datetime(pcc_dates)
+    # Ensure `smm_dates` and 'pcc_dates' are type Pandas DatetimeIndex
+    smm_dates = pd.to_datetime(smm_dates)
+    pcc_dates = pd.to_datetime(pcc_dates)
 
     # Store a copy of pccs so it can be reset after it is manipulated to calculate the smms
-    original_pccs = pccs
+    original_pccs = pccs.copy()
 
     # Convert `pccs` to a numpy array and handle dimensionality
     pccs = np.asarray(pccs)

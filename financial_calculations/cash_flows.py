@@ -529,7 +529,7 @@ def oas_search(cash_flows, discounter, settle_date, target=100, initial_guess=0.
     - ValueError: If the minimization process fails to converge.
     """
     # Extract the starting rates to be used for the objective function
-    start_rates = discounter.rates
+    start_rates = (discounter.rates)
 
     def objective(oas):
         """

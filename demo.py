@@ -32,6 +32,7 @@ from financial_calculations.mbs import (
 from financial_calculations.cash_flows import (
     CashFlowData,
     StepDiscounter,
+    years_from_reference,
     filter_cash_flows,
     value_cash_flows,
     price_cash_flows,
@@ -351,47 +352,15 @@ def run_exercises(coarse_curve, fine_curve):
     print(f"\nExercise WAL: {exercise_wal}")
 
     # Define the discount rates to be used for the rest of the problem
-    # These rates actually correspond to the first 180 entries from the fine curve calibration done later
-    rate_grid = np.array([
-                0.037152689, 0.037128935, 0.037023894, 0.036950150, 0.036817723, 0.036694537,
-                0.036541153, 0.036379749, 0.036206621, 0.035993993, 0.035821335, 0.035561345,
-                0.035327796, 0.035046872, 0.034800912, 0.034519662, 0.034301415, 0.034039094,
-                0.033837231, 0.033616164, 0.033441544, 0.033261279, 0.033157687, 0.033033966,
-                0.032966727, 0.032867582, 0.032810329, 0.032709723, 0.032712051, 0.032678288,
-                0.032727890, 0.032802810, 0.032882302, 0.033002311, 0.033121135, 0.033248283,
-                0.033349087, 0.033481500, 0.033548198, 0.033644680, 0.033781438, 0.033828332,
-                0.033988769, 0.034028321, 0.034113045, 0.034196439, 0.034279111, 0.034418190,
-                0.034547958, 0.034691128, 0.034806511, 0.034901733, 0.035025973, 0.035121987,
-                0.035277551, 0.035448268, 0.035594763, 0.035795894, 0.035951161, 0.036123720,
-                0.036305551, 0.036484735, 0.036674024, 0.036889970, 0.037103384, 0.037297479,
-                0.037495734, 0.037618304, 0.037758110, 0.037871465, 0.037921970, 0.038184057,
-                0.038356549, 0.038503437, 0.038620151, 0.038680809, 0.038777976, 0.038810834,
-                0.038922275, 0.038990273, 0.039054130, 0.039116377, 0.039133121, 0.039170768,
-                0.039198293, 0.039257014, 0.039328614, 0.039418949, 0.039505111, 0.039616051,
-                0.039672769, 0.039791109, 0.039855200, 0.039957880, 0.040105254, 0.040204305,
-                0.040368062, 0.040507569, 0.040613730, 0.040767241, 0.040916601, 0.041048484,
-                0.041258544, 0.041402153, 0.041559566, 0.041747338, 0.041897894, 0.042101405,
-                0.042346425, 0.042540885, 0.042794073, 0.042999333, 0.043173543, 0.043377961,
-                0.043518503, 0.043687666, 0.043832287, 0.043967978, 0.044100426, 0.044234340,
-                0.044355315, 0.044483477, 0.044612551, 0.044731461, 0.044877540, 0.045009377,
-                0.045139615, 0.045267296, 0.045386141, 0.045491997, 0.045642418, 0.045756685,
-                0.045902366, 0.046034770, 0.046123281, 0.046218149, 0.046302105, 0.046370548,
-                0.046476574, 0.046569591, 0.046645881, 0.046733122, 0.046782861, 0.046820931,
-                0.046881562, 0.046912064, 0.046960170, 0.047014943, 0.047021509, 0.047065301,
-                0.047046585, 0.047051823, 0.047028825, 0.047009286, 0.046986697, 0.046960333,
-                0.046939068, 0.046912937, 0.046891320, 0.046868599, 0.046843076, 0.046822097,
-                0.046794752, 0.046772979, 0.046748643, 0.046727087, 0.046706961, 0.046683387,
-                0.046663736, 0.046636769, 0.046612991, 0.046588339, 0.046561760, 0.046542331,
-                0.046518816, 0.046500795, 0.046480874, 0.046460978, 0.046441521, 0.046417292,
-                0.046417292
-            ])
+    # These rates actually correspond to the entries from the fine curve calibration done later
+    rate_grid = np.array(fine_curve.rates)
     
     # Now define the discount date grid associated with the discount rates
-    date_grid = create_regular_dates_grid("10/1/2024", "10/1/2039", 'm')
+    date_grid = np.array(fine_curve.dates)
 
     # Initialize a StepDiscounter and ZCB dates grid for ZCB calculations
     discounter = StepDiscounter(date_grid, rate_grid)
-    zcb_dates = pd.to_datetime(["2024-10-01", "2024-11-01", "2027-02-15", "2039-10-15"])
+    zcb_dates = pd.to_datetime(["2024-10-01", "2024-11-01", "2027-02-15", "2039-10-15", "2042-4-01", "2044-10-01", "2047-04-01", "2054-10-01"])
 
     print(f"\nExercise ZCBs: {discounter.zcbs_from_dates(zcb_dates)}")
 
@@ -569,7 +538,69 @@ def main():
 
     # Calculate forward curves
     coarse_curve = bootstrap_forward_curve(market_close_date, calibration_data_with_dates)
-    fine_curve = calibrate_fine_curve(market_close_date, calibration_data_with_dates, smoothing_error_weight=50000)
+    #fine_curve = calibrate_fine_curve(market_close_date, calibration_data_with_dates, smoothing_error_weights=[2500, 500])
+    fine_curve = StepDiscounter(create_regular_dates_grid(coarse_curve.dates[0], coarse_curve.dates[-1]),
+        rates= [0.040861075, 0.040759356, 0.040585068, 0.040325820, 0.039980431, 0.039554176,
+            0.039042074, 0.038446557, 0.037766254, 0.037002718, 0.036154661, 0.035225321,
+            0.034238589, 0.033344373, 0.032562165, 0.031897518, 0.031350018, 0.030912406,
+            0.030591328, 0.030384055, 0.030292503, 0.030314527, 0.030452173, 0.030703158,
+            0.031049646, 0.031387648, 0.031702604, 0.031991605, 0.032254552, 0.032492949,
+            0.032705315, 0.032892379, 0.033053637, 0.033189508, 0.033299633, 0.033384448,
+            0.033448149, 0.033514772, 0.033587738, 0.033667705, 0.033754823, 0.033848716,
+            0.033949760, 0.034057623, 0.034172510, 0.034294188, 0.034422880, 0.034558505,
+            0.034700961, 0.034850405, 0.035006596, 0.035169720, 0.035339634, 0.035515994,
+            0.035699162, 0.035888961, 0.036085517, 0.036288764, 0.036498727, 0.036715182,
+            0.036936252, 0.037150238, 0.037355594, 0.037551959, 0.037739397, 0.037918447,
+            0.038088658, 0.038250113, 0.038402710, 0.038546580, 0.038681569, 0.038807718,
+            0.038925211, 0.039034003, 0.039134340, 0.039226066, 0.039309124, 0.039384080,
+            0.039450448, 0.039508350, 0.039557685, 0.039598683, 0.039631106, 0.039655318,
+            0.039672646, 0.039692661, 0.039716521, 0.039744597, 0.039776962, 0.039813387,
+            0.039854029, 0.039898738, 0.039947530, 0.040000344, 0.040057394, 0.040118561,
+            0.040183865, 0.040253245, 0.040326682, 0.040404148, 0.040485649, 0.040570885,
+            0.040660097, 0.040753236, 0.040850358, 0.040951346, 0.041056331, 0.041165298,
+            0.041278205, 0.041395062, 0.041515914, 0.041640709, 0.041769373, 0.041901653,
+            0.042037732, 0.042177653, 0.042321462, 0.042469129, 0.042620584, 0.042775822,
+            0.042934012, 0.043090162, 0.043243690, 0.043394281, 0.043542046, 0.043687055,
+            0.043829153, 0.043968508, 0.044104948, 0.044238640, 0.044369391, 0.044497419,
+            0.044622560, 0.044744873, 0.044864389, 0.044981117, 0.045095102, 0.045206448,
+            0.045315066, 0.045420992, 0.045524115, 0.045624523, 0.045722242, 0.045817146,
+            0.045909333, 0.045998780, 0.046085532, 0.046169579, 0.046250930, 0.046329840,
+            0.046406097, 0.046479670, 0.046550639, 0.046619009, 0.046684744, 0.046747930,
+            0.046808589, 0.046866693, 0.046922229, 0.046975235, 0.047025703, 0.047073849,
+            0.047119462, 0.047162633, 0.047203328, 0.047241661, 0.047277484, 0.047310789,
+            0.047341569, 0.047369859, 0.047395866, 0.047419346, 0.047440414, 0.047459229,
+            0.047475608, 0.047489635, 0.047501287, 0.047510627, 0.047517491, 0.047521999,
+            0.047524138, 0.047523899, 0.047521289, 0.047516311, 0.047508938, 0.047499283,
+            0.047487231, 0.047472937, 0.047456291, 0.047437449, 0.047416267, 0.047392752,
+            0.047366903, 0.047338857, 0.047308643, 0.047276129, 0.047241392, 0.047204511,
+            0.047165371, 0.047124100, 0.047080648, 0.047035003, 0.046987160, 0.046936952,
+            0.046884630, 0.046830073, 0.046773425, 0.046714507, 0.046653476, 0.046590360,
+            0.046525136, 0.046457847, 0.046388437, 0.046316949, 0.046243335, 0.046167575,
+            0.046089832, 0.046009939, 0.045928039, 0.045844024, 0.045757898, 0.045669788,
+            0.045579494, 0.045487142, 0.045392687, 0.045296339, 0.045197808, 0.045097405,
+            0.044994965, 0.044890565, 0.044784178, 0.044675943, 0.044565715, 0.044453609,
+            0.044339642, 0.044223818, 0.044105981, 0.043986127, 0.043864319, 0.043740566,
+            0.043615419, 0.043491278, 0.043368278, 0.043246461, 0.043125890, 0.043006436,
+            0.042888477, 0.042771824, 0.042656419, 0.042542150, 0.042429217, 0.042317276,
+            0.042206554, 0.042097052, 0.041988696, 0.041881652, 0.041775938, 0.041671412,
+            0.041568170, 0.041465872, 0.041364753, 0.041264728, 0.041165871, 0.041068136,
+            0.040971467, 0.040875960, 0.040781567, 0.040688475, 0.040596543, 0.040505910,
+            0.040416271, 0.040327748, 0.040240394, 0.040154010, 0.040068820, 0.039984721,
+            0.039901724, 0.039819807, 0.039739015, 0.039659441, 0.039580983, 0.039503659,
+            0.039427417, 0.039352386, 0.039278531, 0.039205688, 0.039133879, 0.039063096,
+            0.038993429, 0.038924780, 0.038857304, 0.038790914, 0.038725614, 0.038661388,
+            0.038598206, 0.038536133, 0.038475055, 0.038415067, 0.038356180, 0.038298392,
+            0.038241570, 0.038185895, 0.038131262, 0.038077682, 0.038025136, 0.037973578,
+            0.037923063, 0.037873528, 0.037825092, 0.037777681, 0.037731354, 0.037686059,
+            0.037641703, 0.037598351, 0.037556014, 0.037514713, 0.037474428, 0.037435056,
+            0.037396681, 0.037359266, 0.037322918, 0.037287542, 0.037253133, 0.037219654,
+            0.037187194, 0.037155646, 0.037124983, 0.037095311, 0.037066608, 0.037038905,
+            0.037012064, 0.036986076, 0.036961020, 0.036936911, 0.036913751, 0.036891611,
+            0.036870354, 0.036849933, 0.036830323, 0.036811646, 0.036793944, 0.036777060,
+            0.036761108, 0.036746041, 0.036731934, 0.036718739, 0.036706458, 0.036695175,
+            0.036684588, 0.036674924, 0.036666076, 0.036658237, 0.036651161, 0.036644896,
+            0.036639625, 0.036635220, 0.036631736, 0.036629110, 0.036627346, 0.036626355,
+            0.036626118])
 
     # Run the exercises outlined in:
     # https://colab.research.google.com/drive/1kBUtBgGQ7uytfb6BrAUgF-zJbG_5mC1F?usp=sharing
@@ -582,9 +613,7 @@ def main():
     # Define the model paramters for the following Hull-White simulations
     alpha = 0.03
     sigma = 0.01
-    num_iterations = 1000
-
-    fine_curve.set_rates(fine_curve.rates*100)
+    num_iterations = 32000
 
     print(f"Alpha: {alpha}, Sigma: {sigma}, Number of Iterations: {num_iterations}")
 
@@ -595,30 +624,53 @@ def main():
     # Use Hull-White to simulate short rates based on the fine forward curve data
     hull_white = hull_white_simulate_from_curve(alpha, sigma, fine_curve, short_rate_dates, num_iterations)
 
+    def hull_white_zcb_log_var(sigma, alpha, zcb_times):
+        zcb_times = np.array(zcb_times)
+        a_Ts = alpha*zcb_times
+        exp_neg_a_Ts = np.exp(-a_Ts)
+        B = 1/alpha * (1-exp_neg_a_Ts)
+        V = (sigma/alpha)**2 * (zcb_times -B) - sigma**2/(2*alpha) * B**2
+        return V
+
+    def hull_white_zcb_var(sigma, alpha, zcb_times, zcb_prices):
+        V = hull_white_zcb_log_var(sigma, alpha, zcb_times)
+        return zcb_prices**2 * (np.exp(V) -1)
+
     # Create a second simulation with no antithetic sampling to compare to the original Hull-White simulation
     hw_no_antithetic = hull_white_simulate_from_curve(alpha, sigma, fine_curve, short_rate_dates, num_iterations, False)
 
-    # Create separate simulations with low number of iterations to plot and compare antithetic vs general sampling paths
-    low_path_iterations = 6 # Define the number of paths to be simulated for the low number of iterations simulation
-    small_alpha = 0.015 # Define an small alpha to limit the mean reversion effect. This will allow the difference in sampling paths to be more pronounced.
-    hw_low_paths_1 = hull_white_simulate_from_curve(small_alpha, sigma, fine_curve, short_rate_dates, low_path_iterations, False)
-    hw_low_paths_2 = hull_white_simulate_from_curve(small_alpha, sigma, fine_curve, short_rate_dates, low_path_iterations)
+    zcb_dates = pd.to_datetime(["2054-10-01"])
+    dummy_disc = StepDiscounter(fine_curve.dates, hw_no_antithetic[1][0])
+    count = []
+    for rates in hw_no_antithetic[1]:
+        dummy_disc.set_rates(rates)
+        count.append(dummy_disc.zcbs_from_dates(zcb_dates))
 
-    # Plot to compare the Hull-White simulations to the fine forward curve
-    plot_hull_white(hull_white, fine_curve)
-    plot_hull_white(hw_no_antithetic, fine_curve, title='No Antithetic Hull-White Average Path vs Forward Curve')
-    plot_hull_white_paths(hw_low_paths_1, fine_curve, title='No Antithetic Hull-White Paths vs Forward Curve')
-    plot_hull_white_paths(hw_low_paths_2, fine_curve, title='Antithetic Hull-White Paths vs Forward Curve')
 
-    # Plot the ZCB prices based on short rates from the antithetic low path number Hull-White simulation
-    plot_hull_white_path_zcb_prices(hw_low_paths_2, fine_curve)
-
-    # Plot the ZCB prices based on the average short rate paths for each of the Hull-White simulations done
-    plot_hull_white_avg_zcb_prices([hull_white, hw_no_antithetic, hw_low_paths_1, hw_low_paths_2], fine_curve)
+    print(f"\nZCBs: {np.mean(count)}")
+    
+    dummy_disc = StepDiscounter(fine_curve.dates, fine_curve.rates)
+    sdfs = []
+    for calibration_point in calibration_data_with_dates:
+        sdf_vals_list = []
+        zcb_time = calibration_point[0] + pd.DateOffset(years=calibration_point[1])
+        zcb_price = 100*fine_curve.zcbs_from_dates(zcb_time)
+        if calibration_point[1] == 1:
+            benchmark_zcb_price = zcb_price
+        for rate_path in hw_no_antithetic[1]:
+            dummy_disc.set_rates(rate_path)
+            sdf_val = dummy_disc.zcbs_from_dates(zcb_time)
+            sdf_vals_list.append(sdf_val)
+        sdfs.append(np.asarray(sdf_vals_list))
+        print(f"Current SDF Time Point: {calibration_point[1]}")
+        print(f"MC var: {np.asarray(sdf_vals_list).var()}")
+        print(f"FC theoretical var: {hull_white_zcb_var(sigma, alpha, calibration_point[1], zcb_price)}")
+        print(f"MC covar: {np.cov([sdfs[0], sdfs[-1]])[0, 1]}")
+        print(np.cov([sdfs[0], sdfs[-1]])[0, 1] / (np.sqrt(np.asarray(sdf_vals_list).var()) * np.sqrt(np.asarray(sdfs[0]).var())))
 
     # Extract the short rate paths from the Hull-White simulations
-    short_rates = hull_white[1]/100
-    no_antithetic_short_rates = hw_no_antithetic[1]/100
+    short_rates = hull_white[1]
+    no_antithetic_short_rates = hw_no_antithetic[1]
 
     # Simulate expected WALs, values, prices, and their standard deviations for each set of short rates
     simulated_mbs_values = pathwise_evaluate_mbs(mbs_contracts, short_rates, short_rate_dates, antithetic=True)

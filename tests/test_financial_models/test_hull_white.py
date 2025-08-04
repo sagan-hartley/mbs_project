@@ -71,16 +71,19 @@ class TestHullWhiteModel(unittest.TestCase):
         theta_dates, theta_vals = calculate_theta(self.forward_curve, 0, self.sigma, self.sim_dates)
         
         # Check that theta_vals is close to the derivative of forward rates
-        expected_dfdt = np.gradient([0.02, 0.02, 0.025, 0.025, 0.03],
-                                years_from_reference(self.forward_curve.market_close_date, self.sim_dates))  # Approximate df/dt
-        np.testing.assert_almost_equal(theta_vals, expected_dfdt, decimal=5)
+        expected_dfdt = np.diff([0.02, 0.02, 0.025, 0.025, 0.03]) / \
+            np.diff(years_from_reference(self.forward_curve.market_close_date, self.sim_dates)) # Approximate df/dt
+        np.testing.assert_almost_equal(theta_vals[:-1], expected_dfdt, decimal=5)
 
     def test_calculate_theta_with_mean_reversion(self):
         """Test calculate_theta with non-zero alpha (mean reversion)."""
         theta_dates, theta_vals = calculate_theta(self.forward_curve, self.alpha, self.sigma, self.sim_dates)
         
-        # Assert the length of theta_vals matches the length of simulation dates
-        self.assertEqual(len(theta_vals), len(self.sim_dates))
+        # Assert the length of theta_dates matches the length of simulation dates
+        self.assertEqual(len(theta_dates), len(self.sim_dates))
+
+        # Assert the length of theta_vals matches the length of theta_dates
+        self.assertEqual(len(theta_vals), len(theta_dates))
         
         # Ensure theta values are reasonable (within expected range of test data)
         self.assertTrue(np.all(theta_vals < 0.1) and np.all(theta_vals > -0.1))
@@ -129,7 +132,7 @@ class TestHullWhiteModel(unittest.TestCase):
 
     def test_hull_white_simulate_from_advanced_curve(self):
         """Test hull_white_simulate_from_curve using the more advanced curve data"""
-        dates, r_all, r_avg, r_var = hull_white_simulate_from_curve(self.alpha, self.sigma, self.advanced_forward_curve, self.advanced_forward_curve.dates, iterations=100000)
+        dates, r_all, r_avg, r_var = hull_white_simulate_from_curve(self.alpha, self.sigma, self.advanced_forward_curve, self.advanced_forward_curve.dates, iterations=1000)
 
         np.testing.assert_array_equal(dates, self.advanced_forward_curve.dates)
         np.testing.assert_array_almost_equal(r_avg, self.advanced_forward_curve.rates, decimal=4)

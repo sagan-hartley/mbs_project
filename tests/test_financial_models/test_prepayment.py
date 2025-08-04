@@ -194,5 +194,18 @@ class TestPrepaymentModel(unittest.TestCase):
         smms = calculate_smms(pccs, pcc_dates, smm_dates, coupon, lag_months=1)
         np.testing.assert_array_almost_equal(smms, expected_smms)
 
+    def test_pccs_unaltered(self):
+        "Test that SMM calculation properly preserves the input PCCs"
+        pccs = np.array([[0.06, 0.065, 0.07, 0.075, 0.08], [0.065, 0.07, 0.075, 0.08, 0.085]])
+        coupon = 0.08
+        smm_dates = pd.to_datetime(['2024-01-01', '2024-02-01', '2024-03-01'])
+        pcc_dates = pd.to_datetime(['2024-01-01', '2024-01-15', '2024-02-01', '2024-02-15', '2024-03-01'])
+        
+        # Expected PCCs with no possibility of pointing back to the original PCCs
+        expected_pccs = np.array([[0.06, 0.065, 0.07, 0.075, 0.08], [0.065, 0.07, 0.075, 0.08, 0.085]])
+
+        _ = calculate_smms(pccs, pcc_dates, smm_dates, coupon, lag_months=1)
+        np.testing.assert_array_almost_equal(pccs, expected_pccs)
+
 if __name__ == '__main__':
     unittest.main()
