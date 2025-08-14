@@ -25,6 +25,19 @@ def days360(d1, d2):
     # Calculate the number of days using 360-day year convention
     return (d2.year - d1.year) * 360 + (d2.month - d1.month) * 30 + (d2_day - d1_day)
 
+def years_thirty360(d1, d2):
+    """
+    Calculate the number of years (as float) between two dates using the 30-360-day year convention.
+
+    Parameters:
+    d1 (datetime): The first date.
+    d2 (datetime): The second date, which should be later than or equal to the first date.
+    
+    Returns:
+    float: The number of years between the two dates, using the 30/360 day count convention.
+    """
+    return days360(d1, d2) / 360
+
 def create_regular_dates_grid(start_date, end_date, frequency='m'):
     """
     Create a finer grid of dates (e.g., daily, weekly, monthly) from the market close date 
@@ -33,9 +46,9 @@ def create_regular_dates_grid(start_date, end_date, frequency='m'):
     Parameters:
     -----------
     start_date : datetime
-        The market close date (start date for the grid).
+        The start date for the grid.
     end_date : datetime
-        The bond maturity date (end date for the grid).
+        The end date for the grid.
     frequency : str, default 'm'
         The interval for the grid. Options are:
         - 'd': daily
@@ -102,47 +115,14 @@ def years_from_reference(ref_date, date_grid):
     The calculation assumes that the number of days in a year is defined by the constant
     `DISC_DAYS_IN_YEAR`. Adjust this constant as necessary for leap years or other definitions
     of a year if needed.
-
-    Examples:
-    ---------
-    >>> import numpy as np
-    >>> from datetime import datetime
-    >>> ref = datetime(2020, 1, 1)
-    >>> dates = np.array([datetime(2021, 1, 1), datetime(2022, 1, 1)])
-    >>> years_from_reference(ref, dates)
-    array([1.0, 2.0])
     """
-    # Convert the ref_date and date_grid to Pandas datetime to allow .days to be applied in a vectorized fashion
+    # Convert the ref_date and date_grid to Pandas datetime to allow .days to be applied across the DatetimeIndex
     ref_date = pd.to_datetime(ref_date)
     date_grid = pd.to_datetime(date_grid)
 
     # Calculate the difference in days between each date in date_grid and the reference date
     # and convert it to years by dividing by the number of days in a year.
     return np.array((date_grid - ref_date).days / DISC_DAYS_IN_YEAR)
-
-def integer_months_from_reference(start_date, end_date):
-    """
-    Calculate the integer number of months between two dates.
-
-    Parameters
-    ----------
-    start_date : datetime
-        The starting date.
-    end_date : datetime
-        The ending date.
-
-    Returns
-    -------
-    int
-        The number of whole months from start_date to end_date.
-    """
-    # Calculate the difference in years and months between the two dates
-    delta = relativedelta(end_date, start_date)
-    
-    # Convert the delta to total months
-    term_in_months = delta.years * 12 + delta.months
-
-    return term_in_months
 
 def step_interpolate(dates_step, rates, query_dates):
     """
@@ -237,38 +217,36 @@ def integral_knots(date_grid, rate_grid):
     yrs_from_reference = np.append(yrs_from_reference, yrs_from_reference[-1] + MAX_EXTRAPOLATE_YRS)
 
     # Calculate the time differences between consecutive years in the yrs_from_reference array
-    time_deltas = np.diff(yrs_from_reference)
+    years_from_close = np.diff(yrs_from_reference)
 
     # Check if the date_grid is sorted; raise an error if it is not
-    # The date_grid needs to be sorted to ensure integral values are properly calucalted with np.cumsum
-    # The date_grid is only sorted with no duplicates iff all time_deltas are strictly psitive
-    if np.any(time_deltas <= 0):
+    if np.any(years_from_close <= 0):
         raise ValueError("date_grid is unsorted or duplicate dates exist.")
 
-    # Calculate the cumulative integral values based on time deltas and rate grid
-    integral_vals = np.cumsum(time_deltas * rate_grid)
+    # Calculate the cumulative integral values based on years from close and rate grid
+    integral_vals = np.cumsum(years_from_close * rate_grid)
 
     # Insert the initial value for the integral (0.0) at the start of the array
     integral_vals = np.insert(integral_vals, 0, 0.0)
 
     return yrs_from_reference, integral_vals
 
-def zcbs_from_deltas(time_deltas, integral_vals, integral_time_deltas):
+def zcbs_from_deltas(years_from_close, integral_vals, integral_years_from_close):
     """
-    Calculate the zero-coupon bond values from time deltas and integral values.
+    Calculate the zero-coupon bond values from years from close and integral values.
 
     This function uses linear interpolation to find the integral values corresponding to the 
-    provided time deltas and then computes the zero-coupon bond values by applying 
+    provided years from close and then computes the zero-coupon bond values by applying 
     the exponential function.
 
     Parameters:
     -----------
-    time_deltas : np.ndarray
-        An array of time deltas for which the zero-coupon bond values are to be computed. 
+    years_from_close : np.ndarray
+        An array of years from close for which the zero-coupon bond values are to be computed. 
     integral_vals : np.ndarray
-        An array of integral values corresponding to the integral time deltas. 
-    integral_time_deltas : np.ndarray
-        An array of integral time deltas used for interpolation.
+        An array of integral values corresponding to the integral years from close. 
+    integral_years_from_close : np.ndarray
+        An array of integral years from close used for interpolation.
 
     Returns:
     --------
@@ -278,7 +256,7 @@ def zcbs_from_deltas(time_deltas, integral_vals, integral_time_deltas):
     Raises:
     -------
     ValueError
-        If integral_vals and integral_time_deltas are not the same length.
+        If integral_vals and integral_years_from_close are not the same length.
 
     Notes:
     ------
@@ -286,12 +264,12 @@ def zcbs_from_deltas(time_deltas, integral_vals, integral_time_deltas):
     ZCB = exp(-I) where I is the interpolated integral value.
     This represents the present value of receiving $1 at maturity.
     """
-    # Check if integral_vals and integral_time_deltas have the same length
-    if len(integral_vals) != len(integral_time_deltas):
-        raise ValueError("integral_vals and integral_time_deltas must have the same length.")
+    # Check if integral_vals and integral_years_from_close have the same length
+    if len(integral_vals) != len(integral_years_from_close):
+        raise ValueError("integral_vals and integral_years_from_close must have the same length.")
     
-    # Interpolate the integral values corresponding to the given time deltas
-    interepolated_integral_vals = np.interp(time_deltas, integral_time_deltas, integral_vals)
+    # Interpolate the integral values corresponding to the given years from close
+    interepolated_integral_vals = np.interp(years_from_close, integral_years_from_close, integral_vals)
     
     # Calculate the zero-coupon bond values using the exponential function
     return np.exp(-interepolated_integral_vals)
@@ -323,18 +301,18 @@ def zcbs_from_dates(dates, rate_vals, rate_dates):
     # Define the reference date as the earliest date in the rate_dates
     reference_date = rate_dates[0]
 
-    # Calculate the time deltas (in years) from the reference date to the provided dates
-    time_deltas = years_from_reference(reference_date, dates)
+    # Calculate the years from close from the reference date to the provided dates
+    years_from_close = years_from_reference(reference_date, dates)
 
     # Check if any date is before the reference date; if so, raise an error
-    if np.any(time_deltas < 0):
+    if np.any(years_from_close < 0):
         raise ValueError('No element in dates may precede the reference date (the earliest rate date)')
 
-    # Calculate the integral time deltas and corresponding integral values
-    integral_time_deltas, integral_vals = integral_knots(rate_dates, rate_vals)
+    # Calculate the integral years from close and corresponding integral values
+    integral_years_from_close, integral_vals = integral_knots(rate_dates, rate_vals)
 
-    # Calculate ZCB values using the time deltas and the integral values
-    return zcbs_from_deltas(time_deltas, integral_vals, integral_time_deltas)
+    # Calculate ZCB values using the years from close and the integral values
+    return zcbs_from_deltas(years_from_close, integral_vals, integral_years_from_close)
 
 def calculate_antithetic_variance(path_results):
     """
@@ -391,3 +369,52 @@ def calculate_antithetic_variance(path_results):
         raise ValueError("path_results must be either a 1D or 2D array.")
 
     return antithetic_variance
+
+import numpy as np
+
+def lag_2darray(array, lag_index):
+    """
+    Lag a 2D array by a specified number of columns, filling the leading values 
+    with the first column's value (prepending).
+
+    Parameters
+    ----------
+    array : array-like
+        A 2D array to be lagged. Can be any array-like structure (e.g., list, tuple).
+    lag_index : int
+        The number of columns to lag. Must be a non-negative integer and less 
+        than the number of columns in the array.
+
+    Returns
+    -------
+    np.ndarray
+        A new 2D array where each column is shifted `lag_index` positions to 
+        the right. The leading `lag_index` columns are filled with the first 
+        column's value.
+
+    Raises
+    ------
+    ValueError
+        If `lag_index` is negative or exceeds the number of columns in `array`.
+    """
+    # Convert input to a NumPy array
+    array = np.asarray(array)
+    
+    # Ensure the array is 2D
+    if array.ndim != 2:
+        raise ValueError("Input must be a 2D array-like structure.")
+
+    # Validate lag_index
+    if lag_index < 0:
+        raise ValueError("lag_index must be a non-negative integer.")
+    if lag_index >= array.shape[1]:
+        raise ValueError("lag_index must be less than the number of columns in the array.")
+
+    if lag_index == 0:
+        return array
+
+    # Prepend columns with the first column repeated
+    prepend = np.repeat(array[:, [0]], lag_index, axis=1)
+    
+    # Concatenate the prepended columns with the lagged main array
+    return np.concatenate((prepend, array[:, :-lag_index]), axis=1)

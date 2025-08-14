@@ -26,14 +26,14 @@ class SemiBondContract:
     None
     """
 
-    def __init__(self, origination_date, term_in_months: int, coupon: float, balance=100.0):
+    def __init__(self, effective_date, term_in_months: int, coupon: float, balance=100.0):
         """
         Initialize a new SemiBondContract instance.
 
         Parameters
         ----------
-        origination_date : str or pd.Timestamp
-            The date on which the bond is issued. This can be in 'YYYY-MM-DD' format or as a pd.Timestamp.
+        effective_date : str or pd.Timestamp
+            The start date of the bond. This can be in 'YYYY-MM-DD' format or as a pd.Timestamp.
         term_in_months : int
             The bond's term length in months.
         coupon : float
@@ -42,8 +42,8 @@ class SemiBondContract:
             The initial principal balance or face value of the bond. Default is 100.0.
         """
         
-        # Convert the origination date to a pandas Timestamp for consistency
-        self.origination_date = pd.to_datetime(origination_date)
+        # Convert the effective date to a pandas Timestamp for consistency
+        self.effective_date = pd.to_datetime(effective_date)
         
         # Set the bond term in months
         self.term_in_months = term_in_months
@@ -72,17 +72,22 @@ def create_semi_bond_cash_flows(semi_bond_contract: SemiBondContract):
     Raises:
     -------
     ValueError:
-        If the coupon is greater than 1 (should be a decimal) or if the origination date is beyond the 28th of the month.
+        If the coupon is greater than 1 (should be a decimal).
+        If the effective date is beyond the 28th of the month.
     """
 
     # Ensure the coupon is in decimal and not a percentage
     if semi_bond_contract.coupon > 1:
         raise ValueError("Coupon should not be greater than 1 as it should be a decimal and not a percentage.")
+    
+    # Ensure theeffective date is on or before the 28th of the month
+    if semi_bond_contract.effective_date.day > 28:
+        raise ValueError("The effective date should not be beyond the 28th of the month.")
 
     # Generate the payment dates by adding multiples of 6-month periods
     accrual_dates = create_regular_dates_grid(
-        semi_bond_contract.origination_date,
-        semi_bond_contract.origination_date + pd.DateOffset(months=semi_bond_contract.term_in_months),
+        semi_bond_contract.effective_date,
+        semi_bond_contract.effective_date + pd.DateOffset(months=semi_bond_contract.term_in_months),
         's'
     )
 

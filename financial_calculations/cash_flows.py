@@ -1,13 +1,12 @@
 import pandas as pd
 import numpy as np
+from scipy.optimize import minimize
 from utils import (
-    days360,
+    years_thirty360,
     years_from_reference,
     integral_knots,
     zcbs_from_deltas
 )
-
-CASH_DAYS_IN_YEAR = 360
 
 class CashFlowData:
     """
@@ -65,11 +64,12 @@ class CashFlowData:
             raise ValueError("All input arrays must have the same length.")
         
         # Initialize attributes if all inputs are of the same length
-        self.balances = balances
-        self.accrual_dates = accrual_dates
-        self.payment_dates = payment_dates
-        self.principal_payments = principal_payments
-        self.interest_payments = interest_payments
+        # If inputs are of the wrong type, convert them if possible
+        self.balances = np.array(balances)
+        self.accrual_dates = pd.to_datetime(accrual_dates)
+        self.payment_dates = pd.to_datetime(payment_dates)
+        self.principal_payments = np.array(principal_payments)
+        self.interest_payments = np.array(interest_payments)
 
     def get_size(self):
         """
@@ -193,6 +193,37 @@ class StepDiscounter:
         self.rates = new_rates
         _, self.integral_vals = integral_knots(self.dates, self.rates)
 
+def get_settle_accrual_index(cash_flows, settle_date):
+    """
+    Determines the index of the accrual period for a given settle date in a cash flow schedule.
+
+    Parameters:
+    ----------
+    cash_flows : CashFlowData
+        An instance of CashFlowData
+
+    settle_date : str, datetime, or Timestamp
+        The settlement date for which the accrual index is calculated. This can be provided 
+        as a string in 'YYYY-MM-DD' format, a `datetime` object, or a Pandas `Timestamp`.
+
+    Returns:
+    -------
+    int
+        The index of the accrual date that occurs on or immediately before the `settle_date`. 
+        If the settle date is on or before the first accrual date, the function returns `0`.
+    """
+    # Convert the settle date to a Pandas Timestamp if it is not already
+    settle_date = pd.to_datetime(settle_date)
+
+    # If the settle date is on or before the first accrual date, return the settle date
+    if settle_date <= cash_flows.accrual_dates[0]:
+        return 0
+    
+    # Find the index of the accrual date right before (or on) the settle date
+    settle_accrual_index = np.searchsorted(cash_flows.accrual_dates, settle_date, 'right') - 1
+
+    return settle_accrual_index
+
 def filter_cash_flows(cash_flows, settle_date):
     """
     Filters cash flows occurring after a specified settlement date.
@@ -298,18 +329,18 @@ def price_cash_flows(present_value, balance_at_settle, settle_date, last_coupon_
         # Normalize the present value by the balance at settlement
         dirty_price = present_value * par_balance / balance_at_settle
 
-    # Calculate the days between the last coupon and settlement dates
-    days_between = days360(last_coupon_date, settle_date)
+    # Calculate the fraction of year between the last coupon and settlement dates
+    years_between = years_thirty360(pd.to_datetime(last_coupon_date), pd.to_datetime(settle_date))
     
     # Compute accrued interest
-    accrued_interest = (annual_interest_rate / CASH_DAYS_IN_YEAR) * days_between * par_balance
+    accrued_interest = annual_interest_rate * years_between * par_balance
     
     # Derive clean price by subtracting accrued interest from the dirty price
     clean_price = dirty_price - accrued_interest
 
     return clean_price
 
-def get_balance_at_settle(cash_flows, filtered_cfs):
+def get_balance_at_settle(cash_flows, settle_date):
     """
     Calculate the balance at settlement based on cash flows and filtered cash flows.
 
@@ -338,17 +369,11 @@ def get_balance_at_settle(cash_flows, filtered_cfs):
     ValueError
         If the first payment date in filtered cash flows is not found in cash flows.
     """
-    # Check if the first balance in filtered cash flows is the same as the first in cash flows
-    if filtered_cfs.balances[0] == cash_flows.balances[0]:
-        balance_at_settle = cash_flows.balances[0]  # Same start point
-    else:
-        # Find the index of the first payment date in filtered_cfs
-        index = np.where(cash_flows.payment_dates == filtered_cfs.payment_dates[0])[0]
-        if index.size == 0:
-            raise ValueError("The first payment date in filtered cash flows is not found in cash flows.")
-        
-        # Use the index to get the balance just before this payment date
-        balance_at_settle = cash_flows.balances[index[0] - 1]
+    # Get the index associated with the settle date
+    settle_index = get_settle_accrual_index(cash_flows, settle_date)
+
+    # Extract the balance at settle from the cash flows using the settle index
+    balance_at_settle = cash_flows.balances[settle_index]
 
     return balance_at_settle
 
@@ -389,13 +414,13 @@ def calculate_weighted_average_life(cash_flows, settle_date):
     filtered_balances = filtered_cfs.balances
     
     # Determine the initial paydown by the difference between the balance at settle and the first value in filtered_cfs
-    initial_paydown = get_balance_at_settle(cash_flows, filtered_cfs) - filtered_cfs.balances[0]
+    initial_paydown = get_balance_at_settle(cash_flows, settle_date) - filtered_cfs.balances[0]
     
     # Create paydown array by appending the initial paydown and the negative differences in balances
     filtered_paydowns = np.append([initial_paydown], -np.diff(filtered_balances))
 
     # Compute the numerator and denominator for WAL calculation
-    wal_numerator = np.sum(filtered_years * filtered_paydowns)
+    wal_numerator = np.dot(filtered_years, filtered_paydowns)
     wal_denominator = np.sum(filtered_paydowns)
 
     # Calculate WAL
@@ -403,10 +428,10 @@ def calculate_weighted_average_life(cash_flows, settle_date):
 
     return wal
 
-def get_last_coupon_date(cash_flows, settle_date):
+def get_settle_accrual_date(cash_flows, settle_date):
     """
-    Get the last coupon date from the cash flows based on the settle date.
-    If no valid coupon dates are found, return the settle date.
+    Get the settle accrual date from the cash flows.
+    If no valid accrual dates are found, return the settle date.
     
     Parameters
     ----------
@@ -419,20 +444,20 @@ def get_last_coupon_date(cash_flows, settle_date):
     Returns
     -------
     datetime
-        The last coupon date, which is the payment date from cash_flows right before the settle_date,
-        or settle_date if no valid coupon dates are found.
+        The settle accrual date, which is the accrual date from cash_flows right before the settle_date,
+        or settle_date if no valid accrual dates are found.
     """
-    # Find the index of the payment date right before the settle date
-    last_coupon_index = np.searchsorted(cash_flows.payment_dates, settle_date)
+    # If the settle date is on or before the first accrual date, return the settle date
+    if settle_date <= cash_flows.accrual_dates[0]:
+        return settle_date
+    
+    # Find the index of the accrual date right before the settle date
+    settle_accrual_index = get_settle_accrual_index(cash_flows, settle_date)
 
-    # If the index is 0, it means settle_date is before the first date
-    if last_coupon_index == 0:
-        return settle_date  # Return settle_date if no valid coupon dates found
+    # Return the last valid accrual date before the settle date
+    settle_accrual_date = cash_flows.accrual_dates[settle_accrual_index]
 
-    # Return the last valid coupon date before the settle date
-    last_coupon_date = cash_flows.payment_dates[last_coupon_index - 1]
-
-    return last_coupon_date
+    return settle_accrual_date
 
 def evaluate_cash_flows(cash_flows, discounter, settle_date, net_annual_interest_rate):
     """
@@ -467,18 +492,15 @@ def evaluate_cash_flows(cash_flows, discounter, settle_date, net_annual_interest
     """
     # Calculate the present value of the cash flows by using the provided discounter function
     value = value_cash_flows(discounter, cash_flows, settle_date)
-
-    # Filter the cash flows based on the settle date
-    filtered_cfs = filter_cash_flows(cash_flows, settle_date)
     
-    # Determine the balance at settle based on the filtered cash flows and calculate the price
-    balance_at_settle = get_balance_at_settle(cash_flows, filtered_cfs)
+    # Determine the balance at settle based on the cash flows and settle date
+    balance_at_settle = get_balance_at_settle(cash_flows, settle_date)
     
-    # Determine the last coupon date based on the cash flows and settle date
-    last_coupon_date = get_last_coupon_date(cash_flows, settle_date)
+    # Determine the settle accrual date based on the cash flows and settle date
+    settle_accrual_date = get_settle_accrual_date(cash_flows, settle_date)
     
     # Calculate the price of the cash flows, considering the net annual interest rate and other parameters
-    price = price_cash_flows(value, balance_at_settle, settle_date, last_coupon_date, net_annual_interest_rate)
+    price = price_cash_flows(value, balance_at_settle, settle_date, settle_accrual_date, net_annual_interest_rate)
     
     # Calculate the weighted average life (WAL) of the cash flows using the settle date
     wal = calculate_weighted_average_life(cash_flows, settle_date)
@@ -486,17 +508,83 @@ def evaluate_cash_flows(cash_flows, discounter, settle_date, net_annual_interest
     # Return the WAL, present value, and price of the cash flows as a tuple
     return wal, value, price
 
-def calculate_dv01(up_vals, down_vals, bump_amount):
+def oas_search(cash_flows, discounter, settle_date, target=100, initial_guess=0.03, tolerance=1e-4):
+    """
+    Perform an Option-Adjusted Spread (OAS) search to align the computed bond value with the target price.
+
+    Parameters:
+    - cash_flows (CashFlowData): An instance of CashFlowData.
+    - discounter (StepDiscounter): An instance of StepDiscounter representing a forward curve 
+    - settle_date (Timestamp): The settlement date for the cash flows.
+    - target (float, optional): The target price of the bond/security. Default is 100 (par value).
+    - initial_guess (float, optional): Initial guess for the OAS (in decimal form, e.g., 0.03 for 3%). 
+                                       Default is 0.03.
+    - tolerance (float, optional): How far off the squared difference between the value using 
+            discount rates plus the oas and the target can be from zero.
+
+    Returns:
+    - oas (float): The computed Option-Adjusted Spread (in decimal form).
+
+    Raises:
+    - ValueError: If the minimization process fails to converge.
+    """
+    # Extract the starting rates to be used for the objective function
+    start_rates = (discounter.rates)
+
+    def objective(oas):
+        """
+        Objective function to minimize. Adjusts the discount rates using the OAS and computes the squared error
+        between the present value of cash flows and the target price.
+
+        Parameters:
+        - oas (float): The Option-Adjusted Spread to test (in decimal form).
+
+        Returns:
+        - float: The squared difference between the computed price and the target.
+        """
+        # Adjust discount rates by adding the current OAS value to the starting rates
+        discounter.set_rates(start_rates + oas)
+        
+        # Compute the present value of cash flows using the updated discounter
+        value = value_cash_flows(discounter, cash_flows, settle_date)
+        
+        # Return the squared difference from the target price
+        return (value - target) ** 2
+
+    # Perform the optimization using the L-BFGS-B method
+    result = minimize(
+        objective, 
+        x0=initial_guess, 
+        method='L-BFGS-B', 
+        bounds=[(-1, 1)],
+        options={'ftol': target * 1e-7}  # Tolerance proportional to the target
+    )
+
+    # Reset the discounter back to its original rates
+    discounter.set_rates(start_rates)
+
+    # Check for convergence
+    if not result.success:
+        raise ValueError("Minimization did not converge. Try adjusting the initial guess or checking input data.")
+    
+    # Check that result satisfies the input error tolerance
+    if result.fun > tolerance:
+        raise ValueError(f"Optimization result is not within tolerance: {result.fun:.6f}")
+    
+    # Return the computed OAS
+    return result.x[0]
+
+def calculate_dv01(up_val, down_val, bump_amount):
     """
     Calculate the dollar value of one basis point (DV01), 
     which represents the price change for a 1 basis point shift in yield.
 
     Parameters:
     -----------
-    up_vals : array-like
-        Array of values when rates are bumped up by a specified amount.
-    down_vals : array-like
-        Array of values when rates are bumped down by a specified amount.
+    up_val : float
+        The value of a security when rates are bumped up by a specified amount.
+    down_val : float
+        The value of a security when rates are bumped down by a specified amount.
     bump_amount : float
         The amount by which rates were bumped to obtain `bumped_vals`.
 
@@ -507,47 +595,36 @@ def calculate_dv01(up_vals, down_vals, bump_amount):
 
     Raises:
     -------
-    ValueError
-        If `bumped_vals` and `vals` do not have the same shape.
     ZeroDivisionError
         If 'bump_amount' is 0.
-    """
-    # Convert inputs to Numpy arrays if they are not already
-    up_vals = np.array(up_vals)
-    down_vals = np.array(down_vals)
-
-    # Check for shape compatibility
-    if up_vals.shape != down_vals.shape:
-        raise ValueError("bumped_vals and vals must have the same shape.")
-    
+    """ 
     # Check bump_amount is nonzero
     if bump_amount == 0:
         raise ZeroDivisionError("bump_amount cannot be zero.")
 
     # Calculate the DV01   
-    dv01 = (np.mean(up_vals) - np.mean(down_vals)) / (2*bump_amount)
+    dv01 = (up_val - down_val) / (2*bump_amount)
 
     return dv01
 
-def calculate_convexity(vals, bumped_up_vals, bumped_down_vals, bump_amount):
+def calculate_convexity(val, bumped_up_val, bumped_down_val, bump_amount):
     """
-    Calculate the convexity of a series of values based on mean values of the original,
-    bumped-up, and bumped-down arrays.
+    Calculate the convexity of a security based on the the original,
+    bumped-up, and bumped-down values.
 
     Convexity is calculated as:
-        ((mean(bumped_up_vals) - 2 * mean(vals) + mean(bumped_down_vals)) /
-         (mean(vals) * (bump_amount ** 2)))
+        (bumped_up_val - 2 * val + bumped_down_vals) / (bump_amount ** 2)
 
     Parameters
     ----------
-    vals : array-like
-        Original array of values.
-    bumped_up_vals : array-like
-        Array of values with a positive bump applied.
-    bumped_down_vals : array-like
-        Array of values with a negative bump applied.
+    val : float
+        Original value of the security
+    bumped_up_val : float
+        The value of a security when rates are bumped up by a specified amount.
+    bumped_down_val : float
+        The value of a security when rates are bumped down by a specified amount.
     bump_amount : float
-        The amount of the bump applied to generate `bumped_up_vals` and `bumped_down_vals`.
+        The amount of the bump applied to generate `bumped_up_val` and `bumped_down_val`.
 
     Returns
     -------
@@ -558,29 +635,12 @@ def calculate_convexity(vals, bumped_up_vals, bumped_down_vals, bump_amount):
     ------
     ZeroDivisionError
         If `bump_amount` is zero.
-    ValueError
-        If input arrays do not have the same shape.
     """
-
-    # Convert inputs to numpy arrays if they aren't already
-    vals = np.asarray(vals)
-    bumped_up_vals = np.asarray(bumped_up_vals)
-    bumped_down_vals = np.asarray(bumped_down_vals)
-
-    # Check that arrays have the same shape
-    if vals.shape != bumped_up_vals.shape or vals.shape != bumped_down_vals.shape:
-        raise ValueError("All input arrays must have the same shape.")
-
     # Raise ZeroDivisionError for zero bump amount
     if bump_amount == 0:
         raise ZeroDivisionError("Bump amount must be non-zero.")
 
-    # Calculate the means of each array
-    mean_vals = np.mean(vals)
-    mean_bumped_up = np.mean(bumped_up_vals)
-    mean_bumped_down = np.mean(bumped_down_vals)
-
-    # Calculate convexity using the mean values
-    convexity = (mean_bumped_up - 2 * mean_vals + mean_bumped_down) / (mean_vals * (bump_amount ** 2))
+    # Calculate convexity
+    convexity = (bumped_up_val - 2 * val + bumped_down_val) / (bump_amount ** 2)
 
     return convexity

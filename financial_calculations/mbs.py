@@ -115,6 +115,7 @@ def calculate_scheduled_balances(principal, origination_date, num_months, annual
 
     # Adjust last payment to pay off any remaining balance
     principal_paydowns[-1] = balances[-2]
+    balances[-1] = 0 # The last balance is now zero
 
     # Include a zero at the start of both interest and principal paydowns arrays
     interest_paid = np.insert(interest_paid, 0, 0)
@@ -129,8 +130,9 @@ def calculate_actual_balances(cash_flow_data, smms, net_annual_interest_rate):
     Parameters
     ----------
     cash_flow_data : CashFlowData
-        An instance of `CashFlowData` that includes:
-        - scheduled_balances (array-like)
+        An instance of `CashFlowData` that represents scheduled balances.
+        it includes:
+        - balances (array-like)
         - accrual_dates (array-like)
         - payment_dates (array-like)
         - scheduled_principal_paydowns (array-like)
@@ -201,9 +203,7 @@ class MbsContract:
         if not isinstance(self.settle_date, pd.Timestamp):
             raise ValueError(f"Invalid settle_date: {self.settle_date}. Must be a pandas Timestamp.")
 
-import numpy as np
-
-def pathwise_evaluate_mbs(mbs_list, short_rates, short_rate_dates, store_vals=True, store_expecteds=True, store_stdevs=True, antithetic=False):
+def pathwise_evaluate_mbs(mbs_list, short_rates, short_rate_dates, spread = 0.04, oas = 0.0, store_vals=True, store_expecteds=True, store_stdevs=True, antithetic=False):
     """
     Calculate the expected weighted average life (WAL), value, price, as well as path standard deviations 
     for the Mortgage-Backed Securities (MBS) based on simulated short-rate paths.
@@ -215,6 +215,8 @@ def pathwise_evaluate_mbs(mbs_list, short_rates, short_rate_dates, store_vals=Tr
     - short_rates (list or ndarray): A 2D array (or list) representing the simulated short rates for each path. If a 
       1D array or list is provided, it will be converted to a 2D array with a single row.
     - short_rate_dates (list or ndarray): An array of dates corresponding to each short rate path.
+    - spread (float): the spread used for PCC calculations. Default is 0.04.
+    - oas (float): the option-adjusted spread used for discounting to a target value. Default is 0.0.
     - store_vals (bool): If True, store individual path values in the results. Default is True.
     - store_expecteds (bool): If True, store expected (mean) values for WAL, value, and price. Default is True.
     - store_stdevs (bool): If True, store standard deviations for WAL, value, and price. Default is True.
@@ -229,7 +231,12 @@ def pathwise_evaluate_mbs(mbs_list, short_rates, short_rate_dates, store_vals=Tr
         short_rates = short_rates[np.newaxis, :]
     
     results = []  # To store results for each MBS
-    market_close_date = short_rate_dates[0]  # Extract the market close date from the short rate dates
+
+    # Initialize a StepDiscounter instance with a placeholder rate, to be updated within each path iteration
+    discounter = StepDiscounter(short_rate_dates, short_rates[0, :] + oas)
+
+    # Calculate the Primary Current Coupons (PCCs) based on the short rates
+    pccs = calculate_pccs(short_rates, spread=spread)
 
     # Loop through each MBS in the provided list
     for mbs in mbs_list:
@@ -242,12 +249,8 @@ def pathwise_evaluate_mbs(mbs_list, short_rates, short_rate_dates, store_vals=Tr
             payment_delay=mbs.payment_delay
         )
 
-        # Calculate the Primary Current Coupons (PCCs) and SMMs based on the original short rates
-        pccs = calculate_pccs(short_rates)
-        smms = calculate_smms(pccs, mbs.gross_annual_coupon, market_close_date, mbs.origination_date, mbs.num_months)
-
-        # Initialize a StepDiscounter instance with a placeholder rate, to be updated within each path iteration
-        discounter = StepDiscounter(short_rate_dates, short_rates[0, :])
+        # Calculate the Single Month Mortality (SMM) rates from the PCCs and input data
+        smms = calculate_smms(pccs, short_rate_dates, scheduled_balances.accrual_dates[:-1], mbs.gross_annual_coupon)
 
         # Loop through each short rate path and corresponding SMM path
         for index, smm_path in enumerate(smms):
@@ -255,7 +258,7 @@ def pathwise_evaluate_mbs(mbs_list, short_rates, short_rate_dates, store_vals=Tr
             actual_balances = calculate_actual_balances(scheduled_balances, smm_path, mbs.net_annual_coupon)
 
             # Update the discounter rates to the current short rate path
-            discounter.set_rates(short_rates[index, :])
+            discounter.set_rates(short_rates[index, :] + oas)
 
             # Evaluate cash flows for the current path
             wal, val, price = evaluate_cash_flows(

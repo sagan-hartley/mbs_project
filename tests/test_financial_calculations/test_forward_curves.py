@@ -156,7 +156,7 @@ class TestCalibrateFineCurve(unittest.TestCase):
         self.balance = 1000.0
         self.frequency = 'm'
         self.initial_guess = 0.04
-        self.smoothing_error_weight = 100.0
+        self.smoothing_error_weights = [10.0, 30.0]
 
     def test_basic_calibration(self):
         """Test basic functionality of calibrate_fine_curve with unique maturity dates."""
@@ -166,7 +166,7 @@ class TestCalibrateFineCurve(unittest.TestCase):
             (pd.Timestamp('2024-01-01'), 3, 0.07)   # Bond 3: 3-year maturity
         ]
 
-        result = calibrate_fine_curve(self.market_close_date, cmt_data, self.balance, self.frequency, self.initial_guess, self.smoothing_error_weight)
+        result = calibrate_fine_curve(self.market_close_date, cmt_data, self.balance, self.frequency, self.initial_guess, self.smoothing_error_weights)
         
         # Ensure result is an instance of StepDiscounter
         self.assertIsInstance(result, StepDiscounter)
@@ -181,6 +181,22 @@ class TestCalibrateFineCurve(unittest.TestCase):
         
         self.assertTrue(all(date in rate_dates for date in expected_maturity_dates), "Rate dates do not match expected maturity dates.")
 
+    def test_invalid_smoothing_weights(self):
+        """Test that calibrate_fine_curve raises a ValueError when the length of smoothing_error_weights != 2."""
+        cmt_data = [
+            (pd.Timestamp('2024-01-01'), 1, 0.05),  # Bond 1: 1-year maturity
+            (pd.Timestamp('2024-01-01'), 2, 0.06),  # Bond 2: 2-year maturity
+            (pd.Timestamp('2024-01-01'), 3, 0.07)   # Bond 3: 3-year maturity
+        ]
+
+        invalid_smoothing_error_weights = [10.0]
+
+        with self.assertRaises(ValueError) as context:
+            calibrate_fine_curve(self.market_close_date, cmt_data, self.balance, smoothing_error_weights=invalid_smoothing_error_weights)
+
+        # Check that the error message is as expected
+        self.assertEqual(str(context.exception), f"The length of smoothing_error_weights is not 2. {len(invalid_smoothing_error_weights)} was input instead.")
+
     def test_duplicate_maturity_dates(self):
         """Test that calibrate_fine_curve raises a ValueError for duplicate maturity dates."""
         cmt_data = [
@@ -189,7 +205,7 @@ class TestCalibrateFineCurve(unittest.TestCase):
         ]
 
         with self.assertRaises(ValueError) as context:
-            calibrate_fine_curve(self.market_close_date, cmt_data, self.balance, self.frequency, self.initial_guess, self.smoothing_error_weight)
+            calibrate_fine_curve(self.market_close_date, cmt_data, self.balance, self.frequency, self.initial_guess, self.smoothing_error_weights)
         
         # Check that the error message is as expected
         self.assertEqual(str(context.exception), "Duplicate maturity dates found in the input data. Ensure each bond has a unique maturity date.")
@@ -205,7 +221,7 @@ class TestCalibrateFineCurve(unittest.TestCase):
 
         # Using an extremely high smoothing error weight to induce non-convergence
         with self.assertRaises(ValueError) as context:
-            calibrate_fine_curve(self.market_close_date, cmt_data, self.balance, self.frequency, self.initial_guess, smoothing_error_weight=1e20)
+            calibrate_fine_curve(self.market_close_date, cmt_data, self.balance, self.frequency, self.initial_guess, smoothing_error_weights=[1e20, 1e20])
 
         self.assertEqual(str(context.exception), "Minimization did not converge. Try adjusting the initial guess or checking input data.")
 

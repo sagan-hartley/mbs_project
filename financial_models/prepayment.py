@@ -1,7 +1,9 @@
 import numpy as np
 import pandas as pd
-from dateutil.relativedelta import relativedelta
-from utils import integer_months_from_reference
+from utils import (
+    create_regular_dates_grid,
+    lag_2darray
+)
 
 SEASONAL_FACTORS_ARRAY = np.array([
         0.75,  # January (month 1)
@@ -20,16 +22,19 @@ SEASONAL_FACTORS_ARRAY = np.array([
 
 def calculate_pccs(short_rates, spread=0.04):
     """
-    Calculate the Primary Cuurent Coupons (PCCs) by adding a fixed spread to the short rates.
-    
+    Calculate the Primary Current Coupons (PCCs) by adding a fixed spread to the short rates.
+
     Parameters:
-    - short_rates (ndarray): Array of short rates from the Hull-White model simulation.
+    - short_rates (array-like): 1D or 2D array of short rates from the Hull-White model simulation.
     - spread (float): Fixed spread to add to short rates. Default is 0.04 (4%).
-    
+
     Returns:
-    - ndarray: Array of PCC values.
+    - ndarray: PCC values.
     """
-    return short_rates + spread
+    # Convert short_rates to a numpy array and broadcast the spread addition to get the PCCs
+    pccs = np.asarray(short_rates) + spread
+
+    return pccs
 
 def refi_strength(spreads):
     """
@@ -59,42 +64,53 @@ def refi_strength(spreads):
     >>> refi_strength(spreads)
     array([0.    , 0.    , 0.02125, 0.0425 , 0.0425 ])
     """
-    return np.clip(0.0425 / 0.015 * spreads, 0.0, 0.0425)
+    return (0.0425 / 0.015) * np.clip(spreads, 0.0, 0.015)
 
-def demo(origination_date, num_months, base_smm = 0.005):
+def demo(smm_dates, base_smm=0.005):
     """
-    Calculate the demographic factors for each month of a loan's term.
+    Calculate the demographic factors for each date in the loan's term using a DatetimeIndex.
 
     Demographic factors are calculated as:
         Demo(age) = seasoning(age) * seasonal(month)
 
     where:
-    - seasoning(age) = max(1, age / 18) * base_smm
+    - seasoning(age) = min(1, age / 18) * base_smm
     - seasonal(month_of_year) represents a seasonal adjustment based on the month of the year.
 
     Parameters
     ----------
-    origination_date : datetime
-        The date when the loan was originated.
-    num_months : int
-        The number of months for the loan term.
+    smm_dates : pd.DatetimeIndex or array-like
+        A Pandas DatetimeIndex representing each date in the loan term. 
+        This must be a regular monthly grid.
     base_smm : float
         The base demographic single month mortality rate
 
     Returns
     -------
     np.ndarray
-        An array of demographic factors for each month in the loan term.
+        An array of demographic factors for each date in the loan term.
+
+    Raises
+    ------
+    ValueError
+        If smm_dates is not a regular monthly grid from start to end.
     """
-    # Generate ages in months up to num_months
-    ages = np.arange(num_months)
+    # Ensure smm_dates is a Pandas DatetimeIndex
+    if not isinstance(smm_dates, pd.DatetimeIndex):
+        smm_dates = pd.to_datetime(smm_dates)
 
-    # Seasoning factors based on age
-    seasoning_factors = np.maximum(1, ages / 18) * base_smm
+    # Check that smm_dates is a monthly date grid from start to end date; raise an error if not
+    if np.any(smm_dates != create_regular_dates_grid(smm_dates[0], smm_dates[-1], 'm')):
+        raise ValueError(f"smm_dates must be a monthly grid. This grid was input: {smm_dates}")
 
-    # Calculate month of year for each month in the loan term
-    start_month = origination_date.month
-    months_of_year = (start_month + ages) % 12
+    # Calculate ages in months from the reference date
+    ages_in_months = np.arange(len(smm_dates))
+
+    # Seasoning factors based on age in months
+    seasoning_factors = np.minimum(1, ages_in_months / 18) * base_smm
+
+    # Calculate month of year for each date in the term
+    months_of_year = smm_dates.month
 
     # Use months_of_year to index directly into the precomputed seasonal factors array
     # Subtract 1 from months_of_year because array indices are 0-based
@@ -105,55 +121,67 @@ def demo(origination_date, num_months, base_smm = 0.005):
 
     return demo_factors
 
-def calculate_smms(pccs, coupon, market_close_date, origination_date, num_months):
+def calculate_smms(pccs, pcc_dates, smm_dates, coupon, lag_months=0):
     """
-    Calculate the Single Monthly Mortality (SMM) rates based on the PCC and the MBS coupon.
-    
-    SMM is influenced by refinancing incentives and demographic factors over time.
+    Calculate Single Monthly Mortality (SMM) rates based on refinancing incentives and demographic factors.
 
     Parameters
     ----------
-    pccs : ndarray
-        A 2D array of Primary Current Coupon (PCC) values, where rows represent scenarios and columns
-        represent months.
+    pccs : np.ndarray or list
+        Primary Current Coupon values (1D or 2D array).
+    pcc_dates : pd.DatetimeIndex, list, or np.ndarray
+        Dates corresponding to the columns of pccs
+    smm_dates : pd.DatetimeIndex, list, or np.ndarray
+        Dates for the loan term as a regular monthly grid.
     coupon : float
         The coupon rate of the MBS.
-    market_close_date : datetime or datetime64
-        The market close date for the MBS, indicating the start of the evaluation.
-    origination_date : datetime or datetime64
-        The origination date for the MBS.
-    num_months : int
-        The length of the MBS in months.
-    
+    lag_months : int, optional
+        Number of months to lag PCC values. Default is 0 (no lag).
+
     Returns
     -------
-    ndarray
-        A 2D array of SMM values for each scenario and month.
-    
-    Raises
-    ------
-    ValueError
-        If the length of `pccs` is less than `num_months` or if the PCC array has unexpected dimensions.
+    np.ndarray
+        A 2D array of SMM rates.
     """
-    if pccs.shape[1] < num_months:
-        raise ValueError("Length of PCCs is less than the specified number of months.")
+    # Ensure `smm_dates` and 'pcc_dates' are type Pandas DatetimeIndex
+    smm_dates = pd.to_datetime(smm_dates)
+    pcc_dates = pd.to_datetime(pcc_dates)
 
-    # Ensure dates are in datetime format
-    market_close_date = pd.to_datetime(market_close_date)
-    origination_date = pd.to_datetime(origination_date)
+    # Store a copy of pccs so it can be reset after it is manipulated to calculate the smms
+    original_pccs = pccs.copy()
 
-    # Calculate integer months difference between origination and market close
-    total_months_diff = integer_months_from_reference(market_close_date, origination_date)
+    # Convert `pccs` to a numpy array and handle dimensionality
+    pccs = np.asarray(pccs)
+    is_1d = pccs.ndim == 1
 
-    # Adjust PCCs for the relevant term window
-    pccs = pccs[:, total_months_diff:total_months_diff + num_months]
+    if is_1d == 1:
+        pccs = pccs.reshape(1, -1)  # Temporarily make it 2D for processing
+    elif pccs.ndim != 2:
+        raise ValueError("pccs must be a 1D or 2D array.")
+    
+    # Validate dimensions
+    if pccs.shape[1] != len(pcc_dates):
+        raise ValueError("The number of columns in `pccs` must match the length of `pcc_dates`.")
+    
+    # Use searchsorted to find indices for each smm date
+    indexes = np.searchsorted(pcc_dates, smm_dates, side='right') - 1
+    pccs = pccs[:, indexes]
 
-    # Calculate the refinancing incentive and demographic factors
+    # Apply lag
+    if lag_months > 0:
+        if lag_months >= pccs.shape[1]:
+            raise IndexError("Lag exceeds the number of available months in `pccs`.")
+        pccs = lag_2darray(pccs, lag_months)
+
+    # Calculate refinancing and demographic factors
     spread = coupon - pccs
-    refi_factors = refi_strength(spread)
-    demo_factors = demo(origination_date, num_months)
+    refi_factors = refi_strength(spread)  # Refinancing incentives
+    demo_factors = demo(smm_dates)  # Demographic factors
 
-    # SMM calculation as the sum of refinancing and demographic components
+    # Final SMM calculation
     smms = refi_factors + demo_factors
 
-    return smms
+    # Reset pccs in case it is used elsewhere
+    pccs = original_pccs
+
+    return smms.flatten() if is_1d else smms # Return smms to original shape if input was 1D else return smms
