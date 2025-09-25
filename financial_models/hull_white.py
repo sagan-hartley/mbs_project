@@ -180,3 +180,126 @@ def hull_white_simulate_from_curve(alpha, sigma, forward_curve, short_rate_dates
     hw_simulation = hull_white_simulate(alpha, sigma, theta, start_rate, iterations, antithetic)
     
     return hw_simulation
+
+def build_rate_grid(r0, N, h):
+    """
+    Construct a recombining short-rate lattice (grid).
+
+    Parameters
+    ----------
+    r0 : float
+        Initial short rate at the root of the tree.
+    N : int
+        Number of time steps in the lattice.
+    h : float
+        Spacing between adjacent nodes in rate terms (step size).
+        Often chosen as h = sqrt(3) * sigma * sqrt(dt) so the
+        trinomial tree matches the variance of the process.
+
+    Returns
+    -------
+    grid : list of np.ndarray
+        grid[i] is an array of node rates at time step i.
+        At step i there are (2*i + 1) nodes corresponding to
+        j = -i, …, +i.
+    """
+    # Start at time 0 with just the root rate
+    grid = [np.array([r0], dtype=float)]
+    # For each future step, expand outward by one node in each direction
+    for i in range(1, N+1):
+        j = np.arange(-i, i+1)       # node indices from -i to i
+        grid.append(r0 + j * h)      # map to actual rates
+    return grid
+
+
+def probs_from_theta(theta, alpha, sigma, dt, eps=1e-12):
+    """
+    Compute trinomial transition probabilities at each step using Hull–White dynamics.
+
+    This version uses exact moment matching (mean and variance) given theta(t),
+    rather than the simplified pm=2/3 approximation.
+
+    Parameters
+    ----------
+    theta : tuple (dates, theta_vals)
+        Output of calculate_theta(...). Only theta_vals are used here.
+        theta[1][i] = theta(t_i).
+    alpha : float
+        Mean-reversion speed in Hull–White.
+    sigma : float
+        Volatility of the short rate.
+    dt : float
+        Time step size (years). Assumed constant here.
+    eps : float, optional
+        Small number used to clamp probabilities away from 0 and 1
+        for numerical stability.
+
+    Returns
+    -------
+    pu_list, pm_list, pd_list : lists of np.ndarray
+        Each list has length N (number of steps).
+        At step i, pu_list[i], pm_list[i], pd_list[i] are arrays of probabilities
+        for nodes j = -i, …, +i, giving transitions to up/mid/down states.
+    """
+    N = len(theta[0]) - 1           # number of steps = number of dates - 1
+    h = np.sqrt(3.0) * sigma * np.sqrt(dt)   # variance-matching step size
+
+    pu_list, pm_list, pd_list = [], [], []
+    for i in range(N):
+        r_i = theta[1][i]           # theta at this step (scalar drift adjustment)
+        mu = (r_i - alpha * r_i) * dt  # expected increment (this line looks suspicious in your draft!)
+
+        # Compute exact moment-matching probabilities
+        a2 = sigma**2 * dt + mu**2
+        pu = 0.5 * (a2 / (h*h) + mu / h)
+        pd = 0.5 * (a2 / (h*h) - mu / h)
+        pm = 1.0 - a2 / (h*h)
+
+        # Clamp for safety, then renormalize
+        pu = np.clip(pu, eps, 1.0-eps)
+        pd = np.clip(pd, eps, 1.0-eps)
+        pm = 1.0 - pu - pd
+
+        pu_list.append(np.atleast_1d(pu))
+        pm_list.append(np.atleast_1d(pm))
+        pd_list.append(np.atleast_1d(pd))
+
+    return pu_list, pm_list, pd_list
+
+
+def backward_price(r_nodes_by_step, pu_list, pm_list, pd_list, dt, payoff_T):
+    """
+    Price a claim by backward induction on a trinomial short-rate lattice.
+
+    Parameters
+    ----------
+    r_nodes_by_step : list of np.ndarray
+        Short rates at each node of the lattice. Produced by build_rate_grid(...).
+    pu_list, pm_list, pd_list : lists of np.ndarray
+        Transition probabilities per node, produced by probs_from_theta(...).
+    dt : float
+        Time step size (years).
+    payoff_T : np.ndarray
+        Array of length 2*N+1 giving terminal payoff at maturity nodes
+        (j = -N..N).
+
+    Returns
+    -------
+    price0 : float
+        Value of the claim at the root node (time 0).
+    """
+    N = len(r_nodes_by_step) - 1    # number of steps
+    V = payoff_T.astype(float).copy()  # initialize terminal values
+
+    # Step backwards through the tree
+    for i in range(N-1, -1, -1):
+        r_i, pu, pm, pd = r_nodes_by_step[i], pu_list[i], pm_list[i], pd_list[i]
+        Vi = np.empty_like(r_i)
+        for idx, r in enumerate(r_i):
+            j = idx - i                   # node index at this step
+            up, mid, dn = (j+1)+(i+1), j+(i+1), (j-1)+(i+1)
+            cont = pu[idx]*V[up] + pm[idx]*V[mid] + pd[idx]*V[dn]
+            Vi[idx] = np.exp(-r*dt) * cont   # discount with short rate
+        V = Vi
+
+    return float(V[0])   # root node value

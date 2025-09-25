@@ -55,6 +55,47 @@ def convert_to_datetime64_array(dates):
 
     return dates
 
+def create_fine_dates_grid(market_close_date, maturity_years, interval_type='monthly'):
+    """
+    Create a finer grid of dates (monthly or weekly) from the market close date 
+    to the bond maturity date.
+    
+    Parameters:
+    -----------
+    market_close_date : datetime
+        The market close date (start date for the grid).
+    maturity_years : float
+        The number of years until bond maturity.
+    interval_type : str
+        The interval for the grid, either 'monthly' or 'weekly'.
+    
+    Returns:
+    --------
+    dates_grid : np.ndarray
+        Array of dates from market close to bond maturity at the specified interval.
+    """
+    # Set the interval for the grid
+    if interval_type == 'monthly':
+        delta = relativedelta(months=1)
+    elif interval_type == 'weekly':
+        delta = relativedelta(weeks=1)
+    else:
+        raise ValueError("Invalid interval_type. Choose 'monthly' or 'weekly'.")
+
+    # Calculate the maturity date
+    maturity_date = market_close_date + relativedelta(years=maturity_years)
+
+    # Initialize the dates grid starting from the market close date
+    dates_grid = []
+    current_date = market_close_date
+
+    while current_date <= maturity_date:
+        dates_grid.append(current_date)
+        current_date += delta  # Increment by the chosen interval (monthly or weekly)
+    
+    # Convert the list to a numpy array
+    return np.array(dates_grid)
+
 def get_ZCB_vector(payment_dates, rate_vals, rate_dates):
     """
     Calculate the discount factors for each payment date using a piecewise constant forward rate curve.
@@ -169,47 +210,6 @@ def discount_cash_flows(payment_dates, cash_flows, discount_rate_vals, discount_
     present_value = np.dot(cash_flows, zcb_values)
 
     return present_value
-
-def create_fine_dates_grid(market_close_date, maturity_years, interval_type='monthly'):
-    """
-    Create a finer grid of dates (monthly or weekly) from the market close date 
-    to the bond maturity date.
-    
-    Parameters:
-    -----------
-    market_close_date : datetime
-        The market close date (start date for the grid).
-    maturity_years : float
-        The number of years until bond maturity.
-    interval_type : str
-        The interval for the grid, either 'monthly' or 'weekly'.
-    
-    Returns:
-    --------
-    dates_grid : np.ndarray
-        Array of dates from market close to bond maturity at the specified interval.
-    """
-    # Set the interval for the grid
-    if interval_type == 'monthly':
-        delta = relativedelta(months=1)
-    elif interval_type == 'weekly':
-        delta = relativedelta(weeks=1)
-    else:
-        raise ValueError("Invalid interval_type. Choose 'monthly' or 'weekly'.")
-
-    # Calculate the maturity date
-    maturity_date = market_close_date + relativedelta(years=maturity_years)
-
-    # Initialize the dates grid starting from the market close date
-    dates_grid = []
-    current_date = market_close_date
-
-    while current_date <= maturity_date:
-        dates_grid.append(current_date)
-        current_date += delta  # Increment by the chosen interval (monthly or weekly)
-    
-    # Convert the list to a numpy array
-    return np.array(dates_grid)
 
 def step_interpolate(dates_step, rates, query_dates):
     """

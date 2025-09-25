@@ -115,7 +115,7 @@ class ForwardCurve:
 
             # Minimize the objective function using a 'L-BFGS-B' method to find the best disc rate
             # We set a tolerance level based on the balance to make sure the minimizer converges
-            result = minimize(objective, x0=initial_guess, method='L-BFGS-B', options={'ftol': balance * 1e-7}) 
+            result = minimize(objective, x0=initial_guess, method='L-BFGS-B', options={'ftol': balance * 1e-7})
 
             if result.success:
                 self.rates = np.append(self.rates, result.x[0])
@@ -137,7 +137,8 @@ class ForwardCurve:
         balance : float
             The balance of the bonds.
         frequency : str, optional
-            The frequency of the date grid for the forward curve. Choices are 'monthly' or 'weekly'. Default is 'monthly'.
+            The frequency of the date grid for the forward curve. 
+            Choises are valid frequency arguments for the create_fine_dates_grid function. Default is 'monthly'.
         initial_guess : float, optional
             The initial guess for the discount rate in the optimization routine. Default is 0.04 (4%).
         smoothing_error_weight : float, optional
@@ -179,7 +180,7 @@ class ForwardCurve:
         # Minimize the objective function using L-BFGS-B method
         # x0 is the initial guess for the disc rate
         rates_length = len(self.dates)
-        result = minimize(objective, x0=np.ones(rates_length)*initial_guess, method='L-BFGS-B', 
+        result = minimize(objective, x0=np.ones(rates_length)*initial_guess, method='L-BFGS-B',
                         options={'ftol': balance * rates_length * 1e-7})
 
         # If the optimization converges, set the rates attribute to the result

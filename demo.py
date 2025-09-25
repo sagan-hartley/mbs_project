@@ -17,7 +17,11 @@ from financial_calculations.mbs_cash_flows import (
     evaluate_cash_flows
 )
 from financial_models.hull_white import (
-    hull_white_simulate_from_curve
+    hull_white_simulate_from_curve,
+    calculate_theta,
+    build_rate_grid,
+    probs_from_theta,
+    backward_price
 )
 from financial_models.prepayment import (
     calculate_pccs,
@@ -171,7 +175,7 @@ def price_mbs_cash_flows(mbs_data, smms, coarse_curve, fine_curve):
 
 def evaluate_mbs_short_rate_paths(mbs_data, short_rates, short_rate_dates):
     """
-    Calculate expected values and prices, path standard deviations, DV01, and convexity for MBS based on short rate paths.
+    Calculate the expected weighted average life, value, price, as well as path standard deviations for the MBS based on short rate paths.
 
     Parameters:
     - mbs_data (list): A list containing details of the MBSs including ID, balance, number of months, gross and net annual coupons, accrual dates, single monthly mortality (SMM) rate, and payment delay days.
@@ -179,14 +183,14 @@ def evaluate_mbs_short_rate_paths(mbs_data, short_rates, short_rate_dates):
     - short_rate_dates (tuple): Array of dates corresponding to the short rates.
 
     Returns:
-    - results (list): A list of dictionaries containing MBS ID, expected value, expected price, DV01, convexity, and standard deviations for each MBS.
+    - results (list): A list of dictionaries containing MBS ID, WALs, expected WAL, values, expected value, prices, expected price, and standard deviations for each MBS.
     """
     results = []  # To store results for each MBS
     market_close_date = short_rate_dates[0]  # Extract the market close date from the short rate dates
 
     # Loop through each MBS in the provided data
     for mbs in mbs_data:
-        wals, vals, prices, dv01s, bumped_up_vals, bumped_down_vals = [], [], [], [], [], []  # Lists to store results for the current MBS
+        wals, vals, prices = [], [], []  # Lists to store results for the current MBS
 
         # Unpack the MBS details
         mbs_id, balance, num_months, gross_annual_coupon, net_annual_coupon, settle_date, origination_date, payment_delay = mbs
@@ -197,15 +201,6 @@ def evaluate_mbs_short_rate_paths(mbs_data, short_rates, short_rate_dates):
         # Calculate the Primary Current Coupons (PCCs) and SMMs based on the original short rates
         pccs = calculate_pccs(short_rates)
         smms = calculate_smms(pccs, gross_annual_coupon, market_close_date, origination_date, num_months)
-
-        # Precompute bumped short rates
-        bump_amount = 0.0025
-        short_rates_up = short_rates + bump_amount
-        short_rates_down = short_rates - bump_amount
-        bumped_pccs_up = calculate_pccs(short_rates_up)
-        bumped_smms_up = calculate_smms(bumped_pccs_up, gross_annual_coupon, market_close_date, origination_date, num_months)
-        bumped_pccs_down = calculate_pccs(short_rates_down)
-        bumped_smms_down = calculate_smms(bumped_pccs_down, gross_annual_coupon, market_close_date, origination_date, num_months)
 
         # Loop through each SMM path to calculate cash flows
         for index, smm_path in enumerate(smms):
@@ -220,55 +215,28 @@ def evaluate_mbs_short_rate_paths(mbs_data, short_rates, short_rate_dates):
             vals.append(val)
             prices.append(price)
 
-            # Calculate bumped actual balances and cash flows values for upward and downward bumped short rates
-            actual_balance_data_up = calculate_actual_balances(scheduled_balance_data, bumped_smms_up[index], net_annual_coupon, payment_delay)
-            _, val_up, _ = evaluate_cash_flows(actual_balance_data_up, settle_date, net_annual_coupon, short_rates_up[index], short_rate_dates)
-
-            actual_balance_data_down = calculate_actual_balances(scheduled_balance_data, bumped_smms_down[index], net_annual_coupon, payment_delay)
-            _, val_down, _ = evaluate_cash_flows(actual_balance_data_down, settle_date, net_annual_coupon, short_rates_down[index], short_rate_dates)
-
-            # Store the bumped values
-            bumped_up_vals.append(val_up)
-            bumped_down_vals.append(val_down)
-
-            # Calculate DV01 and convexity and store the results
-            dv01 = calculate_dv(val_up, val_down, delta = 2 * bump_amount) / 10000 # The devision by 10000 is to convert to units of change in price per basis point
-            dv01s.append(dv01)
-
-        # Calculate means for the WAL, value, price, DV01, and bumped values of the MBS
+        # Calculate means for the WAL, value, and price, DV01 of the MBS
         expected_wal = np.mean(wals)
         expected_value = np.mean(vals)
         expected_price = np.mean(prices)
-        expected_dv01 = np.mean(dv01s)
-        expected_val_up = np.mean(bumped_up_vals)
-        expected_val_down = np.mean(bumped_down_vals)
 
         # Calculate standard deviations
-        wal_std = np.std(wals)
-        val_std = np.std(vals)
-        price_std = np.std(prices)
-        dv01_std = np.std(dv01s)
-       
-        # Calculate the convexity
-        convexity = calculate_convexity(expected_value, expected_val_up, expected_val_down, bump_amount)
-
-        # Print the results for the current MBS
-        print(f"{mbs_id}, Expected WAL: {expected_wal}, WAL Path STD: {wal_std}, Expected Value: {expected_value}, "
-              f"Value Path STD: {val_std}, Expected Price: {expected_price}, Price Path STD: {price_std}, "
-              f"Expected DV01: {expected_dv01}, DV01 Path STD: {dv01_std}, Convexity: {convexity}")
+        wal_stdev = np.std(wals)
+        val_stdev = np.std(vals)
+        price_stdev = np.std(prices)
 
         # Store the result in a dictionary for structured output
         results.append({
             'mbs_id': mbs_id,
+            'wals': wals,
             'expected_wal': expected_wal,
-            'wal_std': wal_std,
+            'wal_stdev': wal_stdev,
+            'vals': vals,
             'expected_value': expected_value,
-            'value_std': val_std,
+            'value_stdev': val_stdev,
+            'prices': prices,
             'expected_price': expected_price,
-            'price_std': price_std,
-            'expected_dv01': expected_dv01,
-            'dv01_std': dv01_std,
-            'convexity': convexity
+            'price_stdev': price_stdev
         })
 
     return results  # Return the list of results for all MBS
@@ -397,16 +365,42 @@ def main():
     
     # Calculate forward curves
     coarse_curve = ForwardCurve(market_close_date)
-    print(type(coarse_curve.market_close_date))
     coarse_curve.bootstrap_forward_curve(calibration_data, 100)
-    print(type(coarse_curve.market_close_date))
     fine_curve = ForwardCurve(market_close_date)
-    print(type(fine_curve.market_close_date))
     fine_curve.calibrate_finer_forward_curve(calibration_data, 100, smoothing_error_weight=50000)
-    print(type(fine_curve.dates[0]))
     
     # Plot the curves
     plot_forward_curves(coarse_curve, fine_curve)
+
+    
+    # --- the functions from earlier (paste them first) ---
+    # build_rate_grid, probs_from_theta, backward_price
+    # (make sure you have those defined in your session!)
+
+    # 1. Setup: parameters and grid
+    alpha = 0.1      # mean reversion
+    sigma = 0.01     # volatility
+    r0 = 0.03        # initial short rate
+    T = 2.0          # 2 years
+    N = 4            # 4 time steps (dt = 0.5 years)
+    dt = T / N
+
+    # calculate theta
+    theta = calculate_theta(fine_curve, alpha, sigma, fine_curve.dates)
+
+    # 2. Build recombining short-rate grid
+    h = np.sqrt(3.0) * sigma * np.sqrt(dt)
+    r_nodes_by_step = build_rate_grid(r0, len(theta[0])-1, h)
+
+    # 3. Compute per-node probabilities
+    pu_list, pm_list, pd_list = probs_from_theta(theta, alpha, sigma, dt)
+
+    # 4. Price a zero-coupon bond (payoff=1 at T)
+    payoff_T = np.ones(2*N+1)
+    price = backward_price(r_nodes_by_step, pu_list, pm_list, pd_list, dt, payoff_T)
+
+    print("Zero-coupon bond price (2y maturity):", price)
+    print("Closed-form approx (exp(-r0*T))     :", np.exp(-r0*T))
 
     # Initialize SMMs
     smms = init_smms()
@@ -452,11 +446,39 @@ def main():
     # Print the 30-yr rate variance of antithetic vs regular sampling Hull-White simmulations
     print(f"Antithetic Sampling 30-yr Rate Variance: {hw_low_paths_2[3][-1]}, No Antithetic Sampling 30-yr Rate Variance: {hw_low_paths_1[3][-1]}")
 
+    bump_amount = 0.0025
+    bumped_up_curve = fine_curve
+    bumped_up_curve.rates = bumped_up_curve.rates + bump_amount
+    bumped_down_curve = fine_curve
+    bumped_down_curve.rates = bumped_down_curve.rates - bump_amount
+    bumped_up_hw = hull_white_simulate_from_curve(alpha, sigma, bumped_up_curve, short_rate_dates, start_rate, num_iterations)
+    bumped_down_hw = hull_white_simulate_from_curve(alpha, sigma, bumped_down_curve, short_rate_dates, start_rate, num_iterations)
+
     # Extract the short rate paths from the Hull-White simulation
     short_rates = hull_white[1]
+    bumped_up_short_rates = bumped_up_hw[1]
+    bumped_down_short_rates = bumped_down_hw[1]
 
-    # Simulate expected WALs, values, prices, and their standard deviations from the first set of short rates
-    simulated_mbs_values = evaluate_mbs_short_rate_paths(mbs_data, short_rates, fine_curve.dates)
+    # Simulate expected WALs, values, prices, and their standard deviations for each set of short rates
+    simulated_mbs_values = evaluate_mbs_short_rate_paths(mbs_data, short_rates, short_rate_dates)
+    bumped_up_vals = evaluate_mbs_short_rate_paths(mbs_data, bumped_up_short_rates, short_rate_dates)
+    bumped_down_vals = evaluate_mbs_short_rate_paths(mbs_data, bumped_down_short_rates, short_rate_dates)
+
+    def calculate_expected_dv01(bumped_vals, vals, bump_amount):
+        assert len(vals) == len(bumped_vals)
+        dvs = []
+        for i in range(len(vals)):
+            dvs.append(calculate_dv(bumped_vals[i], vals[i], bump_amount))
+        dv01 = np.mean(dvs)
+        return dv01
+
+    for index, mbs in enumerate(simulated_mbs_values):
+        print(f"MBS_ID: {mbs['mbs_id']}, Expected WAL: {mbs['expected_wal']}, Expected Value: {mbs['expected_value']}, "
+              f"Expected Price: {mbs['expected_price']}, \nWAL Path STDev: {mbs['wal_stdev']}, "
+              f"Value Path STDev: {mbs['value_stdev']}, Price Path STDev: {mbs['price_stdev']}")
+        
+        dv01 = calculate_expected_dv01(bumped_up_vals[index]['vals'], mbs['vals'], bump_amount)
+        print(f"Expected DV01: {dv01}")
 
 if __name__ == '__main__':
     main()
