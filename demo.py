@@ -389,7 +389,7 @@ def main():
     # 2. Build recombining short-rate grid
     dt_list = ((theta[0] - theta[0][0]).astype(float) / 365)[1:]
     dx_list = delta_x_per_step_ou(alpha, sigma, dt_list)
-    r_nodes_by_step = build_rate_lattice(r0, dx_list)
+    r_nodes_by_step = build_rate_lattice(fine_curve, alpha, sigma)
 
     # 3. Compute per-node probabilities
     pu_list, pm_list, pd_list = probs_from_theta(r_nodes_by_step, theta[1], alpha, sigma, dt_list, dx_list)

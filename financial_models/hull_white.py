@@ -209,33 +209,77 @@ def delta_x_per_step_ou(alpha, sigma, dt_list):
         V = sigma * np.sqrt(dt)
     return np.sqrt(3.0) * V
 
-def build_rate_lattice(r0, dx_list):
+def phi_from_forward(forward_curve, alpha, sigma):
     """
-    Build a recombining short-rate lattice with variable spacing per layer.
-
-    At layer i (time index i), nodes are:
-        r_{i,j} = r0 + j * Δx_i,  j ∈ {-i, ..., +i}.
+    Compute φ(t) shift values for the Hull-White model lattice building function.
 
     Parameters
     ----------
-    r0 : float
-        Initial short rate at the root.
-    dx_list : array-like (N,)
-        Per-step lattice spacing Δx_i for i=0..N-1.
+    forward_curve : ForwardCurve
+        A ForwardCurve object with rate dates and rate values as attributes.
+    alpha : float
+        Mean reversion speed of the Hull-White model.
+    sigma : float
+        Volatility of the short rate.
 
     Returns
     -------
-    lattice : list[np.ndarray]
-        lattice[i] has shape (2*i+1,) with node rates for time i.
-        Length of the list is N+1 (from time 0 to time N).
+    times : np.ndarray
+        Time grid in years starting from 0.
+    phi : np.ndarray
+        Array of φ(t) shift values corresponding to the time grid.
     """
-    lattice = [np.array([r0], float)]
-    for i, dx in enumerate(np.asarray(dx_list, float), start=1):
-        j = np.arange(-i, i + 1)
-        lattice.append(r0 + j * dx)
-    return lattice
+    # Calculate times list from the difference in the forward curve dates from the initial
+    times = (forward_curve.dates - forward_curve.dates[0]).astype(float) / DISC_DAYS_IN_YEAR
 
-def probs_from_theta(r_nodes_by_step, theta_vals, alpha, sigma, dt_list, dx_list, eps=1e-12):
+    f = forward_curve.rates.copy()
+    adj = (sigma**2)/(2.0*alpha**2) * (1.0 - np.exp(-alpha*times))**2
+    phi = f + adj
+    return times, phi
+
+def build_rate_lattice(forward_curve, alpha, sigma):
+    """
+    Build a Hull-White short-rate lattice using OU-state variance per step.
+
+    Parameters
+    ----------
+    forward_curve : ForwardCurve
+        A ForwardCurve object with rate dates and rate values as attributes.
+    alpha : float
+        Mean reversion speed of the Hull–White model.
+    sigma : float
+        Volatility of the short rate.
+
+    Returns
+    -------
+    r_lattice : list of np.ndarray
+        Short-rate lattice. At step i, r_lattice[i] is an array of shape (2*i+1,)
+        containing the short rates at that time step.
+    """
+    times, phi = phi_from_forward(forward_curve, alpha, sigma)
+    dt_list = np.diff(times)
+    N = len(dt_list)
+
+    dx_list = delta_x_per_step_ou(alpha, sigma, dt_list)
+
+    # x-lattice centered at 0
+    x_lattice = [np.array([0.0])]
+    for i, dx in enumerate(dx_list, start=1):
+        j = np.arange(-i, i+1)
+        x_lattice.append(j * dx)
+
+    # shift φ so that r(0) = forward_curve.rates[0]
+    phi_shift = forward_curve.rates[0] - phi[0]
+    phi = phi + phi_shift
+
+    # build r-lattice
+    r_lattice = [x_lattice[0] + phi[0]]
+    for i in range(1, N+1):
+        r_lattice.append(x_lattice[i] + phi[i])
+
+    return r_lattice
+
+def probs_from_theta(r_lattice, theta_vals, alpha, sigma, dt_list, dx_list, eps=1e-12):
     """
     Compute trinomial probabilities with variable Δt_i and Δx_i
     using exact moment matching.
@@ -244,7 +288,7 @@ def probs_from_theta(r_nodes_by_step, theta_vals, alpha, sigma, dt_list, dx_list
     pu_list, pm_list, pd_list = [], [], []
 
     for i in range(N):
-        r_i = r_nodes_by_step[i]                         # node rates at time i
+        r_i = r_lattice[i]                         # node rates at time i
         theta_i = float(theta_vals[i])
         mu = (theta_i - alpha * r_i) * float(dt_list[i]) # mean increment
         a2 = sigma**2 * float(dt_list[i]) + mu**2        # variance term + mu^2
@@ -265,7 +309,7 @@ def probs_from_theta(r_nodes_by_step, theta_vals, alpha, sigma, dt_list, dx_list
 
     return pu_list, pm_list, pd_list
 
-def backward_price(r_nodes_by_step, pu_list, pm_list, pd_list, dt_list, payoff_T):
+def backward_price(r_lattice, pu_list, pm_list, pd_list, dt_list, payoff_T):
     """
     Backward induction to price a payoff at maturity.
 
@@ -275,7 +319,7 @@ def backward_price(r_nodes_by_step, pu_list, pm_list, pd_list, dt_list, payoff_T
     V_next = payoff_T.astype(float).copy()
 
     for i in range(N - 1, -1, -1):
-        r_i = r_nodes_by_step[i]
+        r_i = r_lattice[i]
         pu, pm, pd = pu_list[i], pm_list[i], pd_list[i]
         Vi = np.empty_like(r_i)
 
