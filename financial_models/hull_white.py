@@ -268,10 +268,6 @@ def build_rate_lattice(forward_curve, alpha, sigma):
         j = np.arange(-i, i+1)
         x_lattice.append(j * dx)
 
-    # shift φ so that r(0) = forward_curve.rates[0]
-    phi_shift = forward_curve.rates[0] - phi[0]
-    phi = phi + phi_shift
-
     # build r-lattice
     r_lattice = [x_lattice[0] + phi[0]]
     for i in range(1, N+1):
