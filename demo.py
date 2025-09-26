@@ -19,7 +19,8 @@ from financial_calculations.mbs_cash_flows import (
 from financial_models.hull_white import (
     hull_white_simulate_from_curve,
     calculate_theta,
-    build_rate_grid,
+    delta_x_per_step_ou,
+    build_rate_lattice,
     probs_from_theta,
     backward_price
 )
@@ -381,26 +382,23 @@ def main():
     alpha = 0.1      # mean reversion
     sigma = 0.01     # volatility
     r0 = 0.03        # initial short rate
-    T = 2.0          # 2 years
-    N = 4            # 4 time steps (dt = 0.5 years)
-    dt = T / N
 
     # calculate theta
     theta = calculate_theta(fine_curve, alpha, sigma, fine_curve.dates)
 
     # 2. Build recombining short-rate grid
-    h = np.sqrt(3.0) * sigma * np.sqrt(dt)
-    r_nodes_by_step = build_rate_grid(r0, len(theta[0])-1, h)
+    dt_list = ((theta[0] - theta[0][0]).astype(float) / 365)[1:]
+    dx_list = delta_x_per_step_ou(alpha, sigma, dt_list)
+    r_nodes_by_step = build_rate_lattice(r0, dx_list)
 
     # 3. Compute per-node probabilities
-    pu_list, pm_list, pd_list = probs_from_theta(theta, alpha, sigma, dt)
+    pu_list, pm_list, pd_list = probs_from_theta(r_nodes_by_step, theta[1], alpha, sigma, dt_list, dx_list)
 
     # 4. Price a zero-coupon bond (payoff=1 at T)
-    payoff_T = np.ones(2*N+1)
-    price = backward_price(r_nodes_by_step, pu_list, pm_list, pd_list, dt, payoff_T)
+    payoff_T = np.ones(2*(len(dt_list))+1)
+    price = backward_price(r_nodes_by_step, pu_list, pm_list, pd_list, dt_list, payoff_T)
 
     print("Zero-coupon bond price (2y maturity):", price)
-    print("Closed-form approx (exp(-r0*T))     :", np.exp(-r0*T))
 
     # Initialize SMMs
     smms = init_smms()
