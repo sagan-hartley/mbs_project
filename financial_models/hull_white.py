@@ -292,7 +292,6 @@ def probs_from_theta(r_lattice, theta_vals, alpha, sigma, dt_list, dx_list, eps=
 
         pu = 0.5 * (a2 / (h*h) + mu / h)
         pd = 0.5 * (a2 / (h*h) - mu / h)
-        pm = 1.0 - a2 / (h*h)
 
         # clamp & renormalize
         pu = np.clip(pu, eps, 1.0-eps)
@@ -305,27 +304,45 @@ def probs_from_theta(r_lattice, theta_vals, alpha, sigma, dt_list, dx_list, eps=
 
     return pu_list, pm_list, pd_list
 
-def backward_price(r_lattice, pu_list, pm_list, pd_list, dt_list, payoff_T):
+def backwards_price(r_lattice, pu_list, pm_list, pd_list, dt_list, target_step):
     """
-    Backward induction to price a payoff at maturity.
+    Compute discount factors at a given slice of the lattice using backward induction.
 
-    payoff_T : array length 2*N+1 giving terminal payoff at maturity nodes.
+    Parameters
+    ----------
+    r_lattice : list of np.ndarray
+        Short-rate lattice (from build_rate_lattice).
+    pu_list, pm_list, pd_list : lists of np.ndarray
+        Transition probabilities per node (length N).
+    dt_list : array-like
+        Step lengths Δt_i in years.
+    target_step : int
+        The time step index at which to extract discount factors (0 = root, N = maturity).
+
+    Returns
+    -------
+    discounts : np.ndarray
+        Array of discount factors at the chosen step, aligned with r_lattice[target_step].
     """
     N = len(dt_list)
-    V_next = payoff_T.astype(float).copy()
+    # start with payoff 1 at maturity
+    V_next = np.ones(2*N+1, float)
 
-    for i in range(N - 1, -1, -1):
-        r_i = r_lattice[i]
-        pu, pm, pd = pu_list[i], pm_list[i], pd_list[i]
+    # backward induction
+    for i in range(N-1, -1, -1):
+        r_i, pu, pm, pd = r_lattice[i], pu_list[i], pm_list[i], pd_list[i]
         Vi = np.empty_like(r_i)
-
         for idx, r in enumerate(r_i):
             j = idx - i
             up   = (j+1) + (i+1)
-            mid  = (j+0) + (i+1)
+            mid  = (j  ) + (i+1)
             down = (j-1) + (i+1)
             cont = pu[idx]*V_next[up] + pm[idx]*V_next[mid] + pd[idx]*V_next[down]
             Vi[idx] = np.exp(-r * float(dt_list[i])) * cont
+            
         V_next = Vi
+        if i == target_step:  # capture the slice
+            return V_next.copy()
 
-    return float(V_next[0])
+    # if target_step=0, return root node as array
+    return np.array([V_next[0]])
