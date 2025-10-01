@@ -223,3 +223,202 @@ def hull_white_simulate_from_curve(alpha, sigma, forward_curve, short_rate_dates
     hw_simulation = hull_white_lattice_simulate(alpha, sigma, theta, forward_curve.rates[0], iterations)[0]
     
     return hw_simulation
+
+def delta_x_per_step_ou(alpha, sigma, dt_list):
+    """
+    Compute lattice spacings Δx_i for each step i using the OU-state variance match:
+        Var[x_{i+1} | x_i] = (σ^2 / (2α)) * (1 - e^{-2α Δt_i})
+        Δx_i = sqrt(3) * sqrt(Var)
+
+    Parameters
+    ----------
+    alpha : float
+        Mean reversion speed.
+    sigma : float
+        Short-rate volatility.
+    dt_list : array-like
+        Time step lengths Δt_i in years.
+
+    Returns
+    -------
+    dx_list : np.ndarray
+        Lattice spacing for each step i.
+    """
+    dt = np.asarray(dt_list, dtype=float)
+    if alpha > 1e-12:
+        V = sigma * np.sqrt((1.0 - np.exp(-2.0 * alpha * dt)) / (2.0 * alpha))
+    else:
+        # α → 0 limit
+        V = sigma * np.sqrt(dt)
+    return np.sqrt(3.0) * V
+
+def phi_from_forward(forward_curve, alpha, sigma):
+    """
+    Compute φ(t) shift values for the Hull-White model lattice building function.
+
+    Parameters
+    ----------
+    forward_curve : ForwardCurve
+        A ForwardCurve object with rate dates and rate values as attributes.
+    alpha : float
+        Mean reversion speed of the Hull-White model.
+    sigma : float
+        Volatility of the short rate.
+
+    Returns
+    -------
+    times : np.ndarray
+        Time grid in years starting from 0.
+    phi : np.ndarray
+        Array of φ(t) shift values corresponding to the time grid.
+    """
+    # Calculate times list from the difference in the forward curve dates from the initial
+    times = years_from_reference(forward_curve.dates[0], forward_curve.dates)
+
+    f = forward_curve.rates.copy()
+    adj = (sigma**2)/(2.0*alpha**2) * (1.0 - np.exp(-alpha*times))**2
+    phi = f + adj
+
+    return times, phi
+
+def build_rate_lattices(forward_curve, alpha, sigma):
+    """
+    Build a Hull-White short-rate lattice using OU-state variance per step.
+
+    Parameters
+    ----------
+    forward_curve : ForwardCurve
+        A ForwardCurve object with rate dates and rate values as attributes.
+    alpha : float
+        Mean reversion speed of the Hull-White model.
+    sigma : float
+        Volatility of the short rate.
+
+    Returns
+    -------
+    r_lattice : list of np.ndarray
+        Short-rate lattice. At step i, r_lattice[i] is an array of shape (2*i+1,)
+        containing the short rates at that time step.
+    x_lattice : list of np.ndarray
+        Zero-mean lattice. At step i, x_lattice[i] is an array of shape (2*i+1)
+        containing the spread of steps from x_0 = 0 at that time step.
+    """
+    times, phi = phi_from_forward(forward_curve, alpha, sigma)
+    dt_list = np.diff(times)
+    N = len(dt_list)
+
+    dx_list = delta_x_per_step_ou(alpha, sigma, dt_list)
+
+    # x-lattice centered at 0
+    x_lattice = [np.array([0.0])]
+    for i, dx in enumerate(dx_list, start=1):
+        j = np.arange(-i, i+1)
+        x_lattice.append(j * dx)
+
+    # build r-lattice
+    r_lattice = [x_lattice[0] + phi[0]]
+    for i in range(1, N+1):
+        r_lattice.append(x_lattice[i] + phi[i])
+
+    return r_lattice, x_lattice
+
+def probs_from_nu(x_lattice, alpha, dt_list, dx_list):
+    """
+    Compute trinomial probabilities using Jamshidian/Hull-White drift alignment.
+
+    Parameters
+    ----------
+    x_lattice : list of np.ndarray
+        Zero-mean lattice with step sizes dx_list.
+    alpha : float
+        Mean reversion parameter.
+    dt_list : array-like of float
+        Step lengths Δt_i in years.
+    dx_list : array-like of float
+        Per-step lattice spacing Δx_i (length N).
+
+    Returns
+    -------
+    pu_list, pm_list, pd_list : lists of np.ndarray
+        Probabilities at each step, arrays of length 2*i+1.
+    """
+    N = len(dt_list)
+    pu_list, pm_list, pd_list = [], [], []
+
+    for i in range(N):
+        x_i = x_lattice[i]           # x-values at step i
+        dx_next = dx_list[i]         # spacing at step i+1
+        V = dx_next / np.sqrt(3.0)   # volatility scale
+        dt = dt_list[i]
+
+        pu, pm, pd = [], [], []
+
+        for j, x_ij in enumerate(x_i):
+            # Projected mean-reverted state
+            M = x_ij * np.exp(-alpha * dt)
+
+            # Nearest child index
+            k = int(np.round(M / dx_next))
+            x_next_k = k * dx_next
+
+            # Offset
+            nu = M - x_next_k
+
+            # Probabilities
+            pu_val = 1/6.0 + (nu**2)/(6*V**2) + nu/(2*np.sqrt(3.0)*V)
+            pm_val = 2/3.0 - (nu**2)/(3*V**2)
+            pd_val = 1.0 - pu_val - pm_val
+
+            pu.append(pu_val)
+            pm.append(pm_val)
+            pd.append(pd_val)
+
+        pu_list.append(np.array(pu))
+        pm_list.append(np.array(pm))
+        pd_list.append(np.array(pd))
+
+    return pu_list, pm_list, pd_list
+
+def backwards_price(r_lattice, pu_list, pm_list, pd_list, dt_list, target_step):
+    """
+    Compute discount factors at a given slice of the lattice using backward induction.
+
+    Parameters
+    ----------
+    r_lattice : list of np.ndarray
+        Short-rate lattice (from build_rate_lattice).
+    pu_list, pm_list, pd_list : lists of np.ndarray
+        Transition probabilities per node (length N).
+    dt_list : array-like
+        Step lengths Δt_i in years.
+    target_step : int
+        The time step index at which to extract discount factors (0 = root, N = maturity).
+
+    Returns
+    -------
+    discounts : np.ndarray
+        Array of discount factors at the chosen step, aligned with r_lattice[target_step].
+    """
+    print(pu_list[:2])
+    N = len(dt_list)
+    # start with payoff 1 at maturity
+    V_next = np.ones(2*N+1, float)
+
+    # backward induction
+    for i in range(N-1, -1, -1):
+        r_i, pu, pm, pd = r_lattice[i], pu_list[i], pm_list[i], pd_list[i]
+        Vi = np.empty_like(r_i)
+        for idx, r in enumerate(r_i):
+            j = idx - i
+            up   = (j+1) + (i+1)
+            mid  = (j  ) + (i+1)
+            down = (j-1) + (i+1)
+            cont = pu[idx]*V_next[up] + pm[idx]*V_next[mid] + pd[idx]*V_next[down]
+            Vi[idx] = np.exp(-r * float(dt_list[i])) * cont
+            
+        V_next = Vi
+        if i == target_step:  # capture the slice
+            return V_next.copy()
+
+    # if target_step=0, return root node as array
+    return np.array([V_next[0]])

@@ -3,10 +3,18 @@ import seaborn as sns
 import pandas as pd
 import matplotlib.pyplot as plt
 from utils import (
-    create_regular_dates_grid
+    create_regular_dates_grid,
+    zcbs_from_dates,
+    years_from_reference
 )
 from financial_models.hull_white import (
-    hull_white_simulate_from_curve
+    hull_white_simulate_from_curve,
+    calculate_theta,
+    delta_x_per_step_ou,
+    phi_from_forward,
+    build_rate_lattices,
+    probs_from_nu,
+    backwards_price
 )
 from financial_models.prepayment import (
     calculate_pccs,
@@ -604,7 +612,31 @@ def main():
 
     # Run the exercises outlined in:
     # https://colab.research.google.com/drive/1kBUtBgGQ7uytfb6BrAUgF-zJbG_5mC1F?usp=sharing
-    run_exercises(coarse_curve, fine_curve)
+    #run_exercises(coarse_curve, fine_curve)
+
+     # --- the functions from earlier (paste them first) ---
+    # build_rate_grid, probs_from_theta, backward_price
+    # (make sure you have those defined in your session!)
+
+    # 1. Setup: parameters and grid 
+    alpha = 0.03      # mean reversion
+    sigma = 0.01     # volatility
+    curve = StepDiscounter(fine_curve.dates[:14], fine_curve.rates[:14])
+
+    # 2. Build recombining short-rate grid
+    dt_list = np.diff(years_from_reference(curve.dates[0], curve.dates))
+    dx_list = delta_x_per_step_ou(alpha, sigma, dt_list)
+    r_nodes_by_step, x_lattice = build_rate_lattices(curve, alpha, sigma)
+
+    # 3. Compute per-node probabilities
+    pu_list, pm_list, pd_list = probs_from_nu(x_lattice, alpha, dt_list, dx_list)
+
+    # 4. Price a zero-coupon bond (payoff=1 at the chosen step)
+    step = 3
+    price = backwards_price(r_nodes_by_step, pu_list, pm_list, pd_list, dt_list, step)
+
+    print("Backwards induction ZCB price):", price)
+    print("Fine curve ZCB price:", zcbs_from_dates(curve.dates, curve.rates, curve.dates)[step-1])
     
     # Plot the curves and their ZCB prices
     plot_forward_curves(coarse_curve, fine_curve)
