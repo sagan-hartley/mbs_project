@@ -235,9 +235,10 @@ def phi_from_forward(forward_curve, alpha, sigma):
     f = forward_curve.rates.copy()
     adj = (sigma**2)/(2.0*alpha**2) * (1.0 - np.exp(-alpha*times))**2
     phi = f + adj
+
     return times, phi
 
-def build_rate_lattice(forward_curve, alpha, sigma):
+def build_rate_lattices(forward_curve, alpha, sigma):
     """
     Build a Hull-White short-rate lattice using OU-state variance per step.
 
@@ -246,7 +247,7 @@ def build_rate_lattice(forward_curve, alpha, sigma):
     forward_curve : ForwardCurve
         A ForwardCurve object with rate dates and rate values as attributes.
     alpha : float
-        Mean reversion speed of the Hull–White model.
+        Mean reversion speed of the Hull-White model.
     sigma : float
         Volatility of the short rate.
 
@@ -255,6 +256,9 @@ def build_rate_lattice(forward_curve, alpha, sigma):
     r_lattice : list of np.ndarray
         Short-rate lattice. At step i, r_lattice[i] is an array of shape (2*i+1,)
         containing the short rates at that time step.
+    x_lattice : list of np.ndarray
+        Zero-mean lattice. At step i, x_lattice[i] is an array of shape (2*i+1)
+        containing the spread of steps from x_0 = 0 at that time step.
     """
     times, phi = phi_from_forward(forward_curve, alpha, sigma)
     dt_list = np.diff(times)
@@ -273,34 +277,62 @@ def build_rate_lattice(forward_curve, alpha, sigma):
     for i in range(1, N+1):
         r_lattice.append(x_lattice[i] + phi[i])
 
-    return r_lattice
+    return r_lattice, x_lattice
 
-def probs_from_theta(r_lattice, theta_vals, alpha, sigma, dt_list, dx_list, eps=1e-12):
+def probs_from_nu(x_lattice, alpha, dt_list, dx_list):
     """
-    Compute trinomial probabilities with variable Δt_i and Δx_i
-    using exact moment matching.
+    Compute trinomial probabilities using Jamshidian/Hull-White drift alignment.
+
+    Parameters
+    ----------
+    x_lattice : list of np.ndarray
+        Zero-mean lattice with step sizes dx_list.
+    alpha : float
+        Mean reversion parameter.
+    dt_list : array-like of float
+        Step lengths Δt_i in years.
+    dx_list : array-like of float
+        Per-step lattice spacing Δx_i (length N).
+
+    Returns
+    -------
+    pu_list, pm_list, pd_list : lists of np.ndarray
+        Probabilities at each step, arrays of length 2*i+1.
     """
     N = len(dt_list)
     pu_list, pm_list, pd_list = [], [], []
 
     for i in range(N):
-        r_i = r_lattice[i]                         # node rates at time i
-        theta_i = float(theta_vals[i])
-        mu = (theta_i - alpha * r_i) * float(dt_list[i]) # mean increment
-        a2 = sigma**2 * float(dt_list[i]) + mu**2        # variance term + mu^2
-        h = float(dx_list[i])                       # Δx_i
+        x_i = x_lattice[i]           # x-values at step i
+        dx_next = dx_list[i]         # spacing at step i+1
+        V = dx_next / np.sqrt(3.0)   # volatility scale
+        dt = dt_list[i]
 
-        pu = 0.5 * (a2 / (h*h) + mu / h)
-        pd = 0.5 * (a2 / (h*h) - mu / h)
+        pu, pm, pd = [], [], []
 
-        # clamp & renormalize
-        pu = np.clip(pu, eps, 1.0-eps)
-        pd = np.clip(pd, eps, 1.0-eps)
-        pm = 1.0 - pu - pd
+        for j, x_ij in enumerate(x_i):
+            # Projected mean-reverted state
+            M = x_ij * np.exp(-alpha * dt)
 
-        pu_list.append(pu)
-        pm_list.append(pm)
-        pd_list.append(pd)
+            # Nearest child index
+            k = int(np.round(M / dx_next))
+            x_next_k = k * dx_next
+
+            # Offset
+            nu = M - x_next_k
+
+            # Probabilities
+            pu_val = 1/6.0 + (nu**2)/(6*V**2) + nu/(2*np.sqrt(3.0)*V)
+            pm_val = 2/3.0 - (nu**2)/(3*V**2)
+            pd_val = 1.0 - pu_val - pm_val
+
+            pu.append(pu_val)
+            pm.append(pm_val)
+            pd.append(pd_val)
+
+        pu_list.append(np.array(pu))
+        pm_list.append(np.array(pm))
+        pd_list.append(np.array(pd))
 
     return pu_list, pm_list, pd_list
 
@@ -324,6 +356,7 @@ def backwards_price(r_lattice, pu_list, pm_list, pd_list, dt_list, target_step):
     discounts : np.ndarray
         Array of discount factors at the chosen step, aligned with r_lattice[target_step].
     """
+    print(pu_list[:2])
     N = len(dt_list)
     # start with payoff 1 at maturity
     V_next = np.ones(2*N+1, float)

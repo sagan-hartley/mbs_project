@@ -21,8 +21,8 @@ from financial_models.hull_white import (
     hull_white_simulate_from_curve,
     calculate_theta,
     delta_x_per_step_ou,
-    build_rate_lattice,
-    probs_from_theta,
+    build_rate_lattices,
+    probs_from_nu,
     backwards_price
 )
 from financial_models.prepayment import (
@@ -383,24 +383,24 @@ def main():
     alpha = 0.1      # mean reversion
     sigma = 0.01     # volatility
     r0 = 0.03        # initial short rate
-
+    curve = ForwardCurve(fine_curve.market_close_date, fine_curve.dates[:14], fine_curve.rates[:14])
     # calculate theta
-    theta = calculate_theta(coarse_curve, alpha, sigma, coarse_curve.dates)
+    theta = calculate_theta(curve, alpha, sigma, curve.dates)
 
     # 2. Build recombining short-rate grid
-    dt_list = ((theta[0] [1:]- theta[0][:-1]).astype(float) / 365)
+    dt_list = (theta[0][1:]- theta[0][:-1]).astype(float) / 365.0
     dx_list = delta_x_per_step_ou(alpha, sigma, dt_list)
-    r_nodes_by_step = build_rate_lattice(coarse_curve, alpha, sigma)
+    r_nodes_by_step, x_lattice = build_rate_lattices(curve, alpha, sigma)
 
     # 3. Compute per-node probabilities
-    pu_list, pm_list, pd_list = probs_from_theta(r_nodes_by_step, theta[1], alpha, sigma, dt_list, dx_list)
+    pu_list, pm_list, pd_list = probs_from_nu(x_lattice, alpha, dt_list, dx_list)
 
     # 4. Price a zero-coupon bond (payoff=1 at the chosen step)
     step = 3
     price = backwards_price(r_nodes_by_step, pu_list, pm_list, pd_list, dt_list, step)
 
     print("Backwards induction ZCB price):", price)
-    print("Coarse curve ZCB price:", get_ZCB_vector(coarse_curve.dates, coarse_curve.rates, coarse_curve.dates)[step-1])
+    print("Coarse curve ZCB price:", get_ZCB_vector(curve.dates, curve.rates, curve.dates)[step-1])
 
     # Initialize SMMs
     smms = init_smms()
