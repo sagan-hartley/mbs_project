@@ -320,7 +320,7 @@ def build_rate_lattices(forward_curve, alpha, sigma):
     for i in range(1, N+1):
         r_lattice.append(x_lattice[i] + phi[i])
 
-    return r_lattice, x_lattice
+    return x_lattice, r_lattice, dx_list, dt_list
 
 def probs_from_nu(x_lattice, alpha, dt_list, dx_list):
     """
@@ -379,46 +379,73 @@ def probs_from_nu(x_lattice, alpha, dt_list, dx_list):
 
     return pu_list, pm_list, pd_list
 
-def backwards_price(r_lattice, pu_list, pm_list, pd_list, dt_list, target_step):
+class HullWhiteLattice:
     """
-    Compute discount factors at a given slice of the lattice using backward induction.
-
-    Parameters
-    ----------
-    r_lattice : list of np.ndarray
-        Short-rate lattice (from build_rate_lattice).
-    pu_list, pm_list, pd_list : lists of np.ndarray
-        Transition probabilities per node (length N).
-    dt_list : array-like
-        Step lengths Δt_i in years.
-    target_step : int
-        The time step index at which to extract discount factors (0 = root, N = maturity).
-
-    Returns
-    -------
-    discounts : np.ndarray
-        Array of discount factors at the chosen step, aligned with r_lattice[target_step].
+    Hull-White trinomial lattice for short-rate modeling and pricing.
     """
-    print(pu_list[:2])
-    N = len(dt_list)
-    # start with payoff 1 at maturity
-    V_next = np.ones(2*N+1, float)
 
-    # backward induction
-    for i in range(N-1, -1, -1):
-        r_i, pu, pm, pd = r_lattice[i], pu_list[i], pm_list[i], pd_list[i]
-        Vi = np.empty_like(r_i)
-        for idx, r in enumerate(r_i):
-            j = idx - i
-            up   = (j+1) + (i+1)
-            mid  = (j  ) + (i+1)
-            down = (j-1) + (i+1)
-            cont = pu[idx]*V_next[up] + pm[idx]*V_next[mid] + pd[idx]*V_next[down]
-            Vi[idx] = np.exp(-r * float(dt_list[i])) * cont
+    def __init__(self, forward_curve, alpha, sigma):
+        """
+        Initialize the lattice.
+
+        Parameters
+        ----------
+        forward_curve : ForwardCurve
+            Object with .dates and .rates (same length).
+        alpha : float
+            Mean reversion speed.
+        sigma : float
+            Short-rate volatility.
+        """
+        self.forward_curve = forward_curve
+        self.alpha = alpha
+        self.sigma = sigma
+
+        # build lattice
+        (self.x_lattice,
+         self.r_lattice,
+         self.dx_list,
+         self.dt_list) = build_rate_lattices(forward_curve, alpha, sigma)
+
+        # build probabilities
+        self.pu_list, self.pm_list, self.pd_list = probs_from_nu(self.x_lattice, alpha, self.dt_list, self.dx_list)
+
+    def backwards_price(self, target_step):
+        """
+        Compute discount factors at a given slice of the lattice using backward induction.
+
+        Parameters
+        ----------
+        self : HullWhiteLattice
+            An instance of class HullWhiteLattice
+        target_step : int
+            The time step index at which to extract discount factors (0 = root, N = maturity).
+
+        Returns
+        -------
+        discounts : np.ndarray
+            Array of discount factors at the chosen step, aligned with r_lattice[target_step].
+        """
+        N = len(self.dt_list)
+        # start with payoff 1 at maturity
+        V_next = np.ones(2*N+1, float)
+
+        # backward induction
+        for i in range(N-1, -1, -1):
+            r_i, pu, pm, pd = self.r_lattice[i], self.pu_list[i], self.pm_list[i], self.pd_list[i]
+            Vi = np.empty_like(r_i)
+            for idx, r in enumerate(r_i):
+                j = idx - i
+                up   = (j+1) + (i+1)
+                mid  = (j  ) + (i+1)
+                down = (j-1) + (i+1)
             
-        V_next = Vi
-        if i == target_step:  # capture the slice
-            return V_next.copy()
+                cont = pu[idx]*V_next[up] + pm[idx]*V_next[mid] + pd[idx]*V_next[down]
+                Vi[idx] = np.exp(-r * float(self.dt_list[i])) * cont
+            
+            V_next = Vi
+            if i == target_step:  # capture the slice
+                return V_next.copy()
 
-    # if target_step=0, return root node as array
-    return np.array([V_next[0]])
+        # if target_step=0, return root node as array
+        return np.array([V_next[0]])
