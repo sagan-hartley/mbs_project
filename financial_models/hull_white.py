@@ -449,3 +449,87 @@ class HullWhiteLattice:
 
         # if target_step=0, return root node as array
         return np.array([V_next[0]])
+
+    def arrow_debreu_with_k_matching(self):
+        """
+        Compute Arrow-Debreu state prices Ψ_{i,j} for every lattice node
+        using forward propagation that honors k-node recombination alignment.
+
+        This routine constructs the Arrow-Debreu probabilities (state prices)
+        by propagating discounted probability mass forward through the
+        Hull-White trinomial lattice under the risk-neutral measure.
+
+        The propagation follows:
+            Ψ_{0,0} = 1
+            Ψ_{i+1,k+1} += Ψ_{i,j} * exp(-r_{i,j} * Δt_i) * p_u
+            Ψ_{i+1,k  } += Ψ_{i,j} * exp(-r_{i,j} * Δt_i) * p_m
+            Ψ_{i+1,k-1} += Ψ_{i,j} * exp(-r_{i,j} * Δt_i) * p_d
+        where:
+            k = round(M_{i,j} / Δx_{i+1}),
+            M_{i,j} = x_{i,j} * exp(-α * Δt_i).
+
+        Parameters
+        ----------
+        self : HullWhiteLattice
+            An instance of HullWhiteLattice with attributes:
+            - x_lattice : list[np.ndarray], OU state lattice
+            - r_lattice : list[np.ndarray], short-rate lattice (x + φ)
+            - pu_list, pm_list, pd_list : list[np.ndarray], node transition probabilities
+            - dx_list : np.ndarray, per-step lattice spacing
+            - dt_list : np.ndarray, per-step time deltas (in years)
+            - alpha : float, mean-reversion parameter
+
+        Returns
+        -------
+        psi_list : list[np.ndarray]
+            Each element psi_list[i] is a NumPy array of Arrow–Debreu
+            state prices for time step i (length 2*i + 1).
+            By construction, psi_list[0] = [1.0],
+            and sum(psi_list[i]) equals the model discount factor P(0, t_i).
+
+        Notes
+        -----
+        - This is a forward-propagating algorithm (as opposed to backward induction).
+        - The k-node matching ensures proper recombination when α > 0.
+        - The resulting Arrow–Debreu prices can be used to:
+            * Derive discount factors:  P(0, t_i) = sum_j Ψ_{i,j}
+            * Price any payoff on the lattice:  V(0) = Σ_j Ψ_{i,j} * payoff_{i,j}.
+        """
+        N = len(self.dt_list)
+        psi_list = [np.array([1.0], dtype=float)]  # Ψ_{0,0} = 1
+
+        for i in range(N):
+            # Access current layer data
+            psi_i = psi_list[i]         # current Arrow–Debreu state prices
+            r_i   = self.r_lattice[i]   # current short rates
+            x_i   = self.x_lattice[i]   # current OU states
+            pu    = self.pu_list[i]
+            pm    = self.pm_list[i]
+            pd    = self.pd_list[i]
+
+            dx_next = self.dx_list[i]
+            dt = self.dt_list[i]
+
+            # Allocate next layer’s Ψ array (size = 2*(i+1)+1)
+            psi_next = np.zeros(2*(i+1)+1, dtype=float)
+
+            # Compute per-node discount factors
+            disc = np.exp(-r_i * dt)
+
+            # Forward propagate discounted probability mass
+            for idx, x_ij in enumerate(x_i):
+                # Mean-reversion projection
+                M = x_ij * np.exp(-self.alpha * dt)
+                k = int(np.round(M / dx_next))
+
+                # Weighted, discounted mass at node (i,j)
+                w = psi_i[idx] * disc[idx]
+
+                # Push mass to next-layer children based on k alignment
+                psi_next[(k+1)+(i+1)] += w * pu[idx]
+                psi_next[k+(i+1)]      += w * pm[idx]
+                psi_next[(k-1)+(i+1)]  += w * pd[idx]
+
+            psi_list.append(psi_next)
+
+        return psi_list

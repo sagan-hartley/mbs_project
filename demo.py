@@ -616,17 +616,21 @@ def main():
     # 1. Setup: parameters and grid 
     alpha = 0.03      # mean reversion
     sigma = 0.01     # volatility
-    curve = StepDiscounter(fine_curve.dates[:14], fine_curve.rates[:14])
+    num_slices = 17 # number of slices
+    curve = StepDiscounter(fine_curve.dates[:num_slices+1], fine_curve.rates[:num_slices+1])
 
     # 2. Build lattice
     hw_lattice = HullWhiteLattice(curve, alpha, sigma)
+    print(hw_lattice.x_lattice[-1])
 
     # 3. Price a zero-coupon bond (payoff=1 at the chosen step)
-    step = 3
+    step = 0
     price = hw_lattice.backwards_price(step)
+    arrow_debrue = hw_lattice.arrow_debreu_with_k_matching()[step]
 
     print("Backwards induction ZCB price):", price)
-    print("Fine curve ZCB price:", zcbs_from_dates(curve.dates, curve.rates, curve.dates)[13-step])
+    print("Arrow-Debrue ZCB Price", np.sum(arrow_debrue))
+    print("Fine curve ZCB price:", zcbs_from_dates(curve.dates, curve.rates, curve.dates)[num_slices-step])
     
     # Plot the curves and their ZCB prices
     plot_forward_curves(coarse_curve, fine_curve)
