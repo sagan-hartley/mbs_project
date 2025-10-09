@@ -621,12 +621,11 @@ def main():
 
     # 2. Build lattice
     hw_lattice = HullWhiteLattice(curve, alpha, sigma)
-    print(hw_lattice.x_lattice[-1])
 
     # 3. Price a zero-coupon bond (payoff=1 at the chosen step)
-    step = 0
-    price = hw_lattice.backwards_price(step)
-    arrow_debrue = hw_lattice.arrow_debreu_with_k_matching()[step]
+    step = 2
+    price = np.mean(hw_lattice.backwards_price(step))
+    arrow_debrue = hw_lattice.arrow_debreu_with_k_matching()[num_slices-step]
 
     print("Backwards induction ZCB price):", price)
     print("Arrow-Debrue ZCB Price", np.sum(arrow_debrue))

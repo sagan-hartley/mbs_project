@@ -498,7 +498,7 @@ class HullWhiteLattice:
         N = len(self.dt_list)
         psi_list = [np.array([1.0], dtype=float)]  # Ψ_{0,0} = 1
 
-        for i in range(N):
+        for i in range(N-1):
             # Access current layer data
             psi_i = psi_list[i]         # current Arrow–Debreu state prices
             r_i   = self.r_lattice[i]   # current short rates
