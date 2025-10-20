@@ -5,6 +5,9 @@ from utils import (
     step_interpolate,
     calculate_antithetic_variance
 )
+from ..financial_calculations.cash_flows import (
+    StepDiscounter
+)
 
 def calculate_theta(forward_curve, alpha, sigma, sim_short_rate_dates):
     """
@@ -412,124 +415,260 @@ class HullWhiteLattice:
 
     def backwards_price(self, target_step):
         """
-        Compute discount factors at a given slice of the lattice using backward induction.
+        Compute discount factors at a given slice via backward induction (k-matched).
 
         Parameters
         ----------
-        self : HullWhiteLattice
-            An instance of class HullWhiteLattice
         target_step : int
-            The time step index at which to extract discount factors (0 = root, N = maturity).
+            Slice index at which to extract discount factors (0 = root, N = maturity).
 
         Returns
         -------
         discounts : np.ndarray
-            Array of discount factors at the chosen step, aligned with r_lattice[target_step].
+            Vector of discount factors aligned with r_lattice[target_step].
         """
-        N = len(self.dt_list)
-        # start with payoff 1 at maturity
-        V_next = np.ones(2*N+1, float)
 
-        # backward induction
-        for i in range(N-1, -1, -1):
-            r_i, pu, pm, pd = self.r_lattice[i], self.pu_list[i], self.pm_list[i], self.pd_list[i]
+        N = len(self.dt_list)
+        # terminal payoff: 1 at every maturity node (use actual last slice width)
+        V_next = np.ones_like(self.r_lattice[-1], dtype=float)
+
+        for i in range(N - 1, -1, -1):
+            r_i = self.r_lattice[i]
+            dt  = float(self.dt_list[i])
+            pu  = self.pu_list[i]
+            pm  = self.pm_list[i]
+            pd  = self.pd_list[i]
+
+            # recompute k-indices (mean-reversion alignment) for this step
+            dx_next = self.dx_list[i]
+            M = self.x_lattice[i] * np.exp(-self.alpha * dt)
+            k = np.rint(M / dx_next).astype(int)
+
+            # The next slice was built wide enough to include k±1; map to 0-based indices:
+            # next slice x-values are a uniform grid: x_{i+1,ℓ} = (ℓ + off) * dx_next
+            # We can locate index 0 by finding where x == min(x_{i+1,*}) = k_min*dx_next
+            k_min = (self.x_lattice[i+1] / dx_next).round().astype(int).min()
+            k0 = -k_min  # 0-based offset
+            k_arr = k + k0
+
+            # discount at current nodes
+            disc = np.exp(-r_i * dt)
+
+            # continuation from k-1, k, k+1 at the next slice
             Vi = np.empty_like(r_i)
-            for idx, r in enumerate(r_i):
-                j = idx - i
-                up   = (j+1) + (i+1)
-                mid  = (j  ) + (i+1)
-                down = (j-1) + (i+1)
-            
-                cont = pu[idx]*V_next[up] + pm[idx]*V_next[mid] + pd[idx]*V_next[down]
-                Vi[idx] = np.exp(-r * float(self.dt_list[i])) * cont
-            
+            for idx in range(len(r_i)):
+                kc = k_arr[idx]
+                cont = (pu[idx] * V_next[kc + 1] +
+                        pm[idx] * V_next[kc + 0] +
+                        pd[idx] * V_next[kc - 1])
+                Vi[idx] = disc[idx] * cont
+
             V_next = Vi
-            if i == target_step:  # capture the slice
+            if i == target_step:
                 return V_next.copy()
 
-        # if target_step=0, return root node as array
-        return np.array([V_next[0]])
+        return np.array([V_next[0]], dtype=float)
 
     def arrow_debreu_with_k_matching(self):
         """
-        Compute Arrow-Debreu state prices Ψ_{i,j} for every lattice node
-        using forward propagation that honors k-node recombination alignment.
-
-        This routine constructs the Arrow-Debreu probabilities (state prices)
-        by propagating discounted probability mass forward through the
-        Hull-White trinomial lattice under the risk-neutral measure.
-
-        The propagation follows:
-            Ψ_{0,0} = 1
-            Ψ_{i+1,k+1} += Ψ_{i,j} * exp(-r_{i,j} * Δt_i) * p_u
-            Ψ_{i+1,k  } += Ψ_{i,j} * exp(-r_{i,j} * Δt_i) * p_m
-            Ψ_{i+1,k-1} += Ψ_{i,j} * exp(-r_{i,j} * Δt_i) * p_d
-        where:
-            k = round(M_{i,j} / Δx_{i+1}),
-            M_{i,j} = x_{i,j} * exp(-α * Δt_i).
-
-        Parameters
-        ----------
-        self : HullWhiteLattice
-            An instance of HullWhiteLattice with attributes:
-            - x_lattice : list[np.ndarray], OU state lattice
-            - r_lattice : list[np.ndarray], short-rate lattice (x + φ)
-            - pu_list, pm_list, pd_list : list[np.ndarray], node transition probabilities
-            - dx_list : np.ndarray, per-step lattice spacing
-            - dt_list : np.ndarray, per-step time deltas (in years)
-            - alpha : float, mean-reversion parameter
+        Forward-propagate Arrow–Debreu state prices Ψ_{i,*} honoring k-node alignment.
 
         Returns
         -------
         psi_list : list[np.ndarray]
-            Each element psi_list[i] is a NumPy array of Arrow–Debreu
-            state prices for time step i (length 2*i + 1).
-            By construction, psi_list[0] = [1.0],
-            and sum(psi_list[i]) equals the model discount factor P(0, t_i).
-
-        Notes
-        -----
-        - This is a forward-propagating algorithm (as opposed to backward induction).
-        - The k-node matching ensures proper recombination when α > 0.
-        - The resulting Arrow–Debreu prices can be used to:
-            * Derive discount factors:  P(0, t_i) = sum_j Ψ_{i,j}
-            * Price any payoff on the lattice:  V(0) = Σ_j Ψ_{i,j} * payoff_{i,j}.
+            psi_list[i] sums to the discount factor P(0, t_i).
         """
+
         N = len(self.dt_list)
         psi_list = [np.array([1.0], dtype=float)]  # Ψ_{0,0} = 1
 
-        for i in range(N-1):
-            # Access current layer data
-            psi_i = psi_list[i]         # current Arrow–Debreu state prices
-            r_i   = self.r_lattice[i]   # current short rates
-            x_i   = self.x_lattice[i]   # current OU states
-            pu    = self.pu_list[i]
-            pm    = self.pm_list[i]
-            pd    = self.pd_list[i]
+        for i in range(N):
+            r_i  = self.r_lattice[i]
+            dt   = float(self.dt_list[i])
+            pu   = self.pu_list[i]
+            pm   = self.pm_list[i]
+            pd   = self.pd_list[i]
+            dx_n = self.dx_list[i]
 
-            dx_next = self.dx_list[i]
-            dt = self.dt_list[i]
+            # size next slice correctly (variable widths)
+            psi_next = np.zeros_like(self.r_lattice[i+1], dtype=float)
 
-            # Allocate next layer’s Ψ array (size = 2*(i+1)+1)
-            psi_next = np.zeros(2*(i+1)+1, dtype=float)
+            # k-indices via mean-reversion alignment
+            M = self.x_lattice[i] * np.exp(-self.alpha * dt)
+            k = np.rint(M / dx_n).astype(int)
 
-            # Compute per-node discount factors
+            # map to 0-based indices for the next slice
+            k_min = (self.x_lattice[i+1] / dx_n).round().astype(int).min()
+            k0 = -k_min
+            k_arr = k + k0
+
             disc = np.exp(-r_i * dt)
-
-            # Forward propagate discounted probability mass
-            for idx, x_ij in enumerate(x_i):
-                # Mean-reversion projection
-                M = x_ij * np.exp(-self.alpha * dt)
-                k = int(np.round(M / dx_next))
-
-                # Weighted, discounted mass at node (i,j)
-                w = psi_i[idx] * disc[idx]
-
-                # Push mass to next-layer children based on k alignment
-                psi_next[(k+1)+(i+1)] += w * pu[idx]
-                psi_next[k+(i+1)]      += w * pm[idx]
-                psi_next[(k-1)+(i+1)]  += w * pd[idx]
+            for idx, psi_ij in enumerate(psi_list[i]):
+                w = psi_ij * disc[idx]
+                kc = k_arr[idx]
+                psi_next[kc + 1] += w * pu[idx]
+                psi_next[kc + 0] += w * pm[idx]
+                psi_next[kc - 1] += w * pd[idx]
 
             psi_list.append(psi_next)
 
         return psi_list
+    
+    def forward_probabilities(self):
+        """
+        Forward-propagate undiscounted path probabilities q_{i,*} (risk-neutral mass).
+
+        Returns
+        -------
+        q_list : list[np.ndarray]
+            q_list[i] sums to 1 for all i.
+        """
+
+        N = len(self.dt_list)
+        q_list = [np.array([1.0], dtype=float)]
+
+        for i in range(N):
+            pu   = self.pu_list[i]
+            pm   = self.pm_list[i]
+            pd   = self.pd_list[i]
+            dx_n = self.dx_list[i]
+
+            q_next = np.zeros_like(self.r_lattice[i+1], dtype=float)
+
+            # k-indices for routing
+            M = self.x_lattice[i] * np.exp(-self.alpha * float(self.dt_list[i]))
+            k = np.rint(M / dx_n).astype(int)
+            k_min = (self.x_lattice[i+1] / dx_n).round().astype(int).min()
+            k0 = -k_min
+            k_arr = k + k0
+
+            for idx, mass in enumerate(q_list[i]):
+                kc = k_arr[idx]
+                q_next[kc + 1] += mass * pu[idx]
+                q_next[kc + 0] += mass * pm[idx]
+                q_next[kc - 1] += mass * pd[idx]
+
+            q_list.append(q_next)
+
+        return q_list
+
+    def conditional_discount_factors(self):
+        """
+        Node-wise conditional discount factors DF^{(0->i)}_{i,*} = Ψ_{i,*} / q_{i,*}.
+
+        Returns
+        -------
+        cond_df : list[np.ndarray]
+            For each slice i, an array of conditional discount factors aligned
+            with r_lattice[i]. Unreachable nodes (q=0) are np.nan.
+        """
+
+        psi = self.arrow_debreu_with_k_matching()
+        q   = self.forward_probabilities()
+
+        cond_df = []
+        for i in range(len(psi)):
+            qi = q[i]
+            psii = psi[i]
+            out = np.full_like(psii, np.nan, dtype=float)
+            nz = qi > 0
+            out[nz] = psii[nz] / qi[nz]
+            cond_df.append(out)
+
+        return cond_df
+
+    def conditional_forward_curve(self, slice_index, node_index):
+        """
+        Build a StepDiscounter for the conditional zero curve starting at node (slice_index, node_index).
+
+        This forward-propagates Arrow-Debreu mass from the chosen node through the lattice
+        (with k-matching) to obtain conditional discount factors DF(i0->k | j0), then converts
+        them to continuously-compounded zero rates Z(τ) = -ln(DF)/τ on the relative maturity axis.
+        The returned StepDiscounter is constructed with calendar dates forward_curve.dates[i0:]
+        and the corresponding conditional zero rates.
+
+        Parameters
+        ----------
+        slice_index : int
+            Starting slice i0 (0..N). If i0 == N, the curve is a single point with Z(0)=r_{i0,j0}.
+        node_index : int
+            0-based index of the node on r_lattice[i0].
+
+        Returns
+        -------
+        StepDiscounter
+            StepDiscounter(dates, rates) where:
+            - dates = forward_curve.dates[i0:] (pd.DatetimeIndex)
+            - rates = conditional zero rates from that node to each future date
+        """
+        i0 = int(slice_index)
+        j0 = int(node_index)
+        N = len(self.dt_list)
+
+        if i0 < 0 or i0 > N:
+            raise ValueError("slice_index must be between 0 and N inclusive.")
+        if j0 < 0 or j0 >= len(self.r_lattice[i0]):
+            raise ValueError("node_index out of range for the chosen slice.")
+
+        # Absolute times and relative maturities (years)
+        times = np.concatenate(([0.0], np.cumsum(self.dt_list)))
+        maturity_years = times[i0:] - times[i0]
+
+        # Calendar dates for i0..N
+        dates_slice = pd.DatetimeIndex(self.forward_curve.dates[i0:])
+
+        # Special case: start at maturity
+        if i0 == N:
+            zero_curve = np.array([self.r_lattice[i0][j0]], dtype=float)
+            return StepDiscounter(dates_slice, zero_curve)
+
+        # Precompute mapping offsets for k-matching (s -> s+1): array_index = k(node units) + k0
+        k0_offsets = []
+        for s in range(N):
+            dx_s = self.dx_list[s]
+            k_min_next = (self.x_lattice[s+1] / dx_s).round().astype(int).min()
+            k0_offsets.append(-k_min_next)
+
+        # Initialize AD mass at (i0, j0)
+        psi_curr = np.zeros_like(self.r_lattice[i0], dtype=float)
+        psi_curr[j0] = 1.0
+
+        # DF(i0->i0 | j0) = 1
+        df_vals = [1.0]
+
+        # Forward propagation from i0 to N
+        for s in range(i0, N):
+            dt  = float(self.dt_list[s])
+            r_s = self.r_lattice[s]
+            dx_s = self.dx_list[s]
+
+            # k-matching indices for this step
+            M = self.x_lattice[s] * np.exp(-self.alpha * dt)
+            k_arr = np.rint(M / dx_s).astype(int) + k0_offsets[s]
+
+            # Discount at current nodes
+            disc = np.exp(-r_s * dt)
+
+            # Push discounted mass to next slice
+            psi_next = np.zeros_like(self.r_lattice[s+1], dtype=float)
+            pu, pm, pd = self.pu_list[s], self.pm_list[s], self.pd_list[s]
+            for q, mass in enumerate(psi_curr):
+                if mass == 0.0:
+                    continue
+                w = mass * disc[q]
+                kc = k_arr[q]
+                psi_next[kc + 1] += w * pu[q]
+                psi_next[kc + 0] += w * pm[q]
+                psi_next[kc - 1] += w * pd[q]
+
+            psi_curr = psi_next
+            df_vals.append(float(psi_curr.sum()))
+
+        # Convert DF -> zero rates without a mask; handle τ=0 explicitly
+        df_vals = np.array(df_vals, dtype=float)
+        zero_curve = np.empty_like(df_vals)
+        zero_curve[0] = self.r_lattice[i0][j0]                 # define Z(0)
+        zero_curve[1:] = -np.log(df_vals[1:]) / maturity_years[1:]  # τ>0
+
+        # Construct and return your StepDiscounter(dates, rates)
+        return StepDiscounter(dates_slice, zero_curve)

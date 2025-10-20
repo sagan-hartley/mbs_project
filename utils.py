@@ -370,8 +370,6 @@ def calculate_antithetic_variance(path_results):
 
     return antithetic_variance
 
-import numpy as np
-
 def lag_2darray(array, lag_index):
     """
     Lag a 2D array by a specified number of columns, filling the leading values 
