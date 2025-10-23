@@ -630,6 +630,8 @@ def main():
     print("Backwards induction ZCB price):", price)
     print("Arrow-Debrue ZCB Price", np.sum(arrow_debrue))
     print("Fine curve ZCB price:", zcbs_from_dates(curve.dates, curve.rates, curve.dates)[num_slices-step])
+
+    print(hw_lattice.backward_all_conditional_forwards()[1][3][2])
     
     # Plot the curves and their ZCB prices
     plot_forward_curves(coarse_curve, fine_curve)

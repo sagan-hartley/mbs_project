@@ -5,7 +5,7 @@ from utils import (
     step_interpolate,
     calculate_antithetic_variance
 )
-from ..financial_calculations.cash_flows import (
+from financial_calculations.cash_flows import (
     StepDiscounter
 )
 
@@ -286,12 +286,15 @@ def phi_from_forward(forward_curve, alpha, sigma):
 
 def build_rate_lattices(forward_curve, alpha, sigma):
     """
-    Build a Hull-White short-rate lattice using OU-state variance per step.
+    Build a Hull-White short-rate lattice using the k-matching (drift-aligned)
+    method for the OU process.
 
     Parameters
     ----------
     forward_curve : ForwardCurve
-        A ForwardCurve object with rate dates and rate values as attributes.
+        A ForwardCurve object with attributes:
+            - dates : list of datetime objects (same length as rates)
+            - rates : list of floats (instantaneous forward rates in decimals)
     alpha : float
         Mean reversion speed of the Hull-White model.
     sigma : float
@@ -299,28 +302,52 @@ def build_rate_lattices(forward_curve, alpha, sigma):
 
     Returns
     -------
-    r_lattice : list of np.ndarray
-        Short-rate lattice. At step i, r_lattice[i] is an array of shape (2*i+1,)
-        containing the short rates at that time step.
     x_lattice : list of np.ndarray
-        Zero-mean lattice. At step i, x_lattice[i] is an array of shape (2*i+1)
-        containing the spread of steps from x_0 = 0 at that time step.
+        Zero-mean OU state lattice. Slice i is an array of x-values at time step i.
+        Slice widths can vary (not fixed 2i+1) to ensure all children fit.
+    r_lattice : list of np.ndarray
+        Short-rate lattice, r = x + φ(t), with the same geometry as x_lattice.
+    dx_list : np.ndarray
+        Lattice spacings Δx_i for each step (from delta_x_per_step_ou).
+    dt_list : np.ndarray
+        Time step lengths Δt_i in years.
     """
+    # --- Step 1: φ(t) and time grid ---
     times, phi = phi_from_forward(forward_curve, alpha, sigma)
     dt_list = np.diff(times)
     N = len(dt_list)
 
+    # --- Step 2: OU state step sizes ---
     dx_list = delta_x_per_step_ou(alpha, sigma, dt_list)
 
-    # x-lattice centered at 0
-    x_lattice = [np.array([0.0])]
-    for i, dx in enumerate(dx_list, start=1):
-        j = np.arange(-i, i+1)
-        x_lattice.append(j * dx)
+    # --- Step 3: Build zero-mean x-lattice via k-matching ---
+    x_lattice = [np.array([0.0], dtype=float)]  # root node at x=0
+    for i in range(1, N + 1):
+        prev_x = x_lattice[i - 1]
+        dx = dx_list[i - 1]
+        dt = dt_list[i - 1]
 
-    # build r-lattice
+        # Conditional mean projection for each parent node
+        M = prev_x * np.exp(-alpha * dt)
+
+        # Nearest "middle" node in the next slice
+        k_raw = np.rint(M / dx).astype(int)
+
+        # Ensure the new slice covers all children (k−1, k, k+1) for every parent
+        k_min = k_raw.min()
+        k_max = k_raw.max()
+        new_k_start = k_min - 1
+        new_k_end = k_max + 1
+
+        # Create the next slice centered on 0, wide enough to fit all children
+        new_k_vals = np.arange(new_k_start, new_k_end + 1, dtype=int)
+        new_slice = new_k_vals.astype(float) * dx
+
+        x_lattice.append(new_slice)
+
+    # --- Step 4: Build r-lattice by adding φ(t) ---
     r_lattice = [x_lattice[0] + phi[0]]
-    for i in range(1, N+1):
+    for i in range(1, N + 1):
         r_lattice.append(x_lattice[i] + phi[i])
 
     return x_lattice, r_lattice, dx_list, dt_list
@@ -672,3 +699,102 @@ class HullWhiteLattice:
 
         # Construct and return your StepDiscounter(dates, rates)
         return StepDiscounter(dates_slice, zero_curve)
+    
+    def backward_all_conditional_forwards(self):
+        """
+        For every slice i = 0..N, compute:
+        • node-wise discount factors P(i->k) for all k = i..N (via backward induction),
+        • node-wise per-step instantaneous forward rates over [t_{k-1}, t_k].
+
+        Returns
+        -------
+        discounts_per_slice : list[np.ndarray]
+            discounts_per_slice[i] is a 2D array of shape ((N - i + 1), M_i),
+            where M_i = number of nodes at slice i.
+            Row r = 0..(N-i) contains P(i -> i+r) evaluated at each node j on slice i.
+            Row 0 is all ones (P(i->i) = 1).
+
+        forwards_per_slice : list[np.ndarray]
+            forwards_per_slice[i] is a 2D array of shape ((N - i), M_i).
+            Row r = 0..(N-i-1) contains the instantaneous per-step forward rates over
+            [t_{i+r}, t_{i+r+1}] at each node j on slice i:
+                f^{(i)}_{i+r -> i+r+1}(j)
+            = - ( ln P(i->i+r+1) - ln P(i->i+r) ) / Δt_{i+r}.
+            Note: the first row equals the short rates r_{i,*} at slice i.
+
+        Notes
+        -----
+        • Efficiency: We run one backward pass per target k (k = 0..N). During the pass
+        we store P(i->k) simultaneously for all earlier slices i encountered.
+        • k-matching:
+            M = x_{s-1,*} * exp(-α Δt_{s-1}),  k_node = round(M / Δx_s)
+            array index on slice s: k_arr = k_node + k0, where
+            k0 = - min(round(x_{s,*} / Δx_s)).
+        """
+
+        N = len(self.dt_list)
+
+        # ---- helper: one backward step s -> s-1 (maps V on slice s to V on slice s-1) ----
+        def backstep(V_next, s):
+            dt   = float(self.dt_list[s-1])
+            r_im = self.r_lattice[s-1]
+            pu   = self.pu_list[s-1]
+            pm   = self.pm_list[s-1]
+            pd   = self.pd_list[s-1]
+            dx_s = self.dx_list[s-1]
+
+            # k-matching indices for routing into slice s
+            M = self.x_lattice[s-1] * np.exp(-self.alpha * dt)                 # projected mean
+            k_node = np.rint(M / dx_s).astype(int)                             # node units
+            k_min_next = (self.x_lattice[s] / dx_s).round().astype(int).min()  # origin of next grid in node units
+            k0 = -k_min_next
+            k_arr = k_node + k0                                                # 0-based array indices
+
+            disc = np.exp(-r_im * dt)
+            V_im = np.empty_like(r_im, dtype=float)
+            for q in range(len(r_im)):
+                kc = k_arr[q]
+                cont = pu[q] * V_next[kc + 1] + pm[q] * V_next[kc + 0] + pd[q] * V_next[kc - 1]
+                V_im[q] = disc[q] * cont
+            return V_im
+
+        # ---- allocate output containers for all slices ----
+        discounts_per_slice = []
+        forwards_per_slice  = []
+        for i in range(N + 1):
+            Mi = len(self.r_lattice[i])
+            D  = np.zeros((N - i + 1, Mi), dtype=float)
+            D[0, :] = 1.0  # P(i->i) = 1
+            discounts_per_slice.append(D)
+            if i < N:
+                F = np.zeros((N - i, Mi), dtype=float)
+                forwards_per_slice.append(F)
+            else:
+                forwards_per_slice.append(np.zeros((0, Mi), dtype=float))  # empty for last slice
+
+        # ---- process each target maturity k, one backward pass each ----
+        # k = 0 is trivial: only affects slice i=0 row 0 (already set to ones).
+        for k in range(1, N + 1):
+            # terminal payoff 1 at slice k
+            V = np.ones_like(self.r_lattice[k], dtype=float)
+
+            # step back: s goes k, k-1, ..., 1
+            # when we land on slice i = s-1, V holds P(i->k) at that slice
+            for s in range(k, 0, -1):
+                V = backstep(V, s)           # V now lives on slice s-1
+                i = s - 1
+                discounts_per_slice[i][k - i, :] = V
+
+        # ---- convert discounts to per-step instantaneous forwards at each slice ----
+        dt = np.asarray(self.dt_list, dtype=float)
+        for i in range(N):
+            D = discounts_per_slice[i]  # shape (N - i + 1, Mi)
+            F = forwards_per_slice[i]   # shape (N - i,     Mi)
+            # rows r = 0..(N-i-1) map to steps [t_{i+r}, t_{i+r+1}]
+            for r in range(N - i):
+                # f^{(i)}_{i+r -> i+r+1} = - (ln P(i->i+r+1) - ln P(i->i+r)) / Δt_{i+r}
+                num = np.log(D[r + 1, :]) - np.log(D[r, :])
+                F[r, :] = - num / dt[i + r]
+            # sanity: F[0, :] == r_lattice[i] (since D[0,:]=1 and D[1,:]≈exp(-r_i * dt_i))
+
+        return discounts_per_slice, forwards_per_slice
